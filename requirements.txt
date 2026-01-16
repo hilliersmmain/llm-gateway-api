@@ -1,0 +1,18 @@
+# Core Framework
+fastapi[standard]>=0.115.0
+uvicorn[standard]>=0.32.0
+
+# Database
+sqlmodel>=0.0.22
+asyncpg>=0.30.0
+greenlet>=3.1.0
+
+# Google Gemini SDK
+google-genai>=1.0.0
+
+# Configuration
+pydantic-settings>=2.6.0
+python-dotenv>=1.0.1
+
+# Development
+httpx>=0.28.0

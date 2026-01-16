@@ -55,10 +55,6 @@ app.add_middleware(
 )
 
 
-# Mount static files
-app.mount("/", StaticFiles(directory="static", html=True), name="static")
-
-
 @app.exception_handler(GuardrailError)
 async def guardrail_exception_handler(request: Request, exc: GuardrailError):
     """Handle guardrail violations."""
@@ -69,12 +65,6 @@ async def guardrail_exception_handler(request: Request, exc: GuardrailError):
             "error_type": exc.error_type,
         },
     )
-
-
-@app.get("/", include_in_schema=False)
-async def root():
-    """Redirect to docs."""
-    return {"message": "LLM Gateway API", "docs": "/docs"}
 
 
 @app.get(
@@ -138,3 +128,7 @@ async def chat(
         content=response_text,
         token_usage=token_usage,
     )
+
+
+# Mount static files (must be last to avoid shadowing API routes)
+app.mount("/", StaticFiles(directory="static", html=True), name="static")

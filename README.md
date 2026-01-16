@@ -112,13 +112,37 @@ curl -X POST "http://localhost:8000/chat" \
 
 **Prerequisites:** Python 3.12+, Docker
 
+### Option 1: Docker (Recommended)
+
+The easiest way to run the complete stack:
+
 ```bash
 # Clone the repository
 git clone https://github.com/hilliersmmain/llm-gateway-api.git
 cd llm-gateway-api
 
-# Start PostgreSQL
-docker compose up -d
+# Configure environment
+cp .env.example .env
+# Edit .env and add your GEMINI_API_KEY
+
+# Start the complete stack (API + PostgreSQL)
+docker-compose up -d --build
+
+# Verify it's running
+curl http://localhost:8000/health
+```
+
+### Option 2: Local Development
+
+For development with hot-reload:
+
+```bash
+# Clone the repository
+git clone https://github.com/hilliersmmain/llm-gateway-api.git
+cd llm-gateway-api
+
+# Start PostgreSQL only
+docker-compose up -d db
 
 # Create virtual environment
 python -m venv .venv
@@ -131,11 +155,11 @@ pip install -r requirements.txt
 cp .env.example .env
 # Edit .env and add your GEMINI_API_KEY
 
-# Run the server
+# Run the server with hot-reload
 uvicorn app.main:app --reload
 ```
 
-Open browser to `http://localhost:8000/docs` for interactive API documentation.
+Open browser to `http://localhost:8000` for the chat UI, or `/docs` for Swagger documentation.
 
 ---
 

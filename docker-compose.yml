@@ -1,17 +1,17 @@
 services:
   db:
     image: postgres:17-alpine
-    container_name: gemini_guardrails_db
+    container_name: llm_gateway_db
     environment:
       POSTGRES_USER: user
       POSTGRES_PASSWORD: password
-      POSTGRES_DB: gemini_guardrails
+      POSTGRES_DB: llm_gateway
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U user -d gemini_guardrails"]
+      test: ["CMD-SHELL", "pg_isready -U user -d llm_gateway"]
       interval: 10s
       timeout: 5s
       retries: 5

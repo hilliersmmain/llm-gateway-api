@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager."""
-    logger.info("Starting Gemini Guardrails API...")
+    logger.info("Starting LLM Gateway API...")
     await init_db()
     logger.info("Database initialized")
     yield
@@ -36,7 +36,7 @@ async def lifespan(app: FastAPI):
 
 # Create FastAPI application
 app = FastAPI(
-    title="Gemini Guardrails API",
+    title="LLM Gateway API",
     description="Enterprise-grade LLM gateway with input validation and request logging",
     version="1.0.0",
     lifespan=lifespan,
@@ -69,7 +69,7 @@ async def guardrail_exception_handler(request: Request, exc: GuardrailError):
 @app.get("/", include_in_schema=False)
 async def root():
     """Redirect to docs."""
-    return {"message": "Gemini Guardrails API", "docs": "/docs"}
+    return {"message": "LLM Gateway API", "docs": "/docs"}
 
 
 @app.get(
@@ -89,7 +89,7 @@ async def health_check():
     responses={400: {"model": ErrorResponse}},
     tags=["Chat"],
     summary="Send a message to Gemini",
-    description="Send a message through the guardrails and receive a response from Gemini 3 Flash",
+    description="Send a message through the guardrails and receive a response from Gemini 2.5 Flash",
 )
 async def chat(
     request: ChatRequest,

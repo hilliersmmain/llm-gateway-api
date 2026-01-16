@@ -13,14 +13,14 @@ class Settings(BaseSettings):
 
     # Database Configuration
     database_url: str = (
-        "postgresql+asyncpg://user:password@localhost:5432/gemini_guardrails"
+        "postgresql+asyncpg://user:password@localhost:5432/llm_gateway"
     )
 
     # Logging Configuration
     log_level: str = "INFO"
 
     # Model Configuration
-    model_name: str = "gemini-3-flash"
+    model_name: str = "gemini-2.5-flash"
     max_input_length: int = 5000
 
     # Guardrail Configuration

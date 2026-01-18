@@ -1,12 +1,11 @@
 # LLM Gateway API
 
-[![Python 3.12+](https://img.shields.io/badge/Python-3.12+-3776AB? style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
+[![Python 3.12+](https://img.shields.io/badge/Python-3.12+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)](https://www.postgresql.org/)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://www.docker.com/)
-[![Gemini](https://img.shields.io/badge/Gemini-2.5%20Flash-8E75B2?style=for-the-badge&logo=google&logoColor=white)](https://ai.google. dev/)
-[![Tests:  18/18](https://img.shields.io/badge/Tests-18%2F18%20passing-brightgreen? style=for-the-badge)](./tests)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg? style=for-the-badge)](./LICENSE)
+[![Gemini](https://img.shields.io/badge/Gemini-2.5%20Flash-8E75B2?style=for-the-badge&logo=google&logoColor=white)](https://ai.google.dev/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](./LICENSE)
 
 An enterprise-grade LLM gateway that proxies requests to Google's Gemini 2.5 Flash model with built-in input validation, structured output enforcement, and comprehensive request logging.  Designed for production scenarios where security, observability, and reliability matter.
 
@@ -246,7 +245,8 @@ Program: B.S. Data Science → B.S./M.S. Artificial Intelligence (Fall 2026)
 Minors: Cognitive Science, AI
 Spring 2026 Coursework: Human-Centered Computing (ITIS 3130), Computer Science II (ITSC 1213), Mathematics for Computer Science (MATH 2112)
 Background: Started in Cellular/Molecular Biology at Appalachian State University (2024-2025), where AI's potential in neruoscience, sparked my transition to Data Science/Aritifical Intelligence
-Interested in AI applications in neuroscience, human-computer interaction, and building & researching the infrastructure that powers intelligent systems.
+
+Interested in AI applications in neuroscience, human-computer interaction, and building & researching the infrastructure and fundementals that powers intelligent systems from the ground up.
 
 ---
 

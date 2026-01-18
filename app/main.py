@@ -16,7 +16,6 @@ from app.models.schemas import ChatRequest, ChatResponse, ErrorResponse, HealthR
 from app.services.gemini import get_gemini_service
 from app.services.guardrails import GuardrailError, get_guardrails_service
 
-# Configure logging
 settings = get_settings()
 logging.basicConfig(
     level=getattr(logging, settings.log_level.upper()),
@@ -35,7 +34,6 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down...")
 
 
-# Create FastAPI application
 app = FastAPI(
     title="LLM Gateway API",
     description="Enterprise-grade LLM gateway with input validation and request logging",
@@ -45,7 +43,6 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-# Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -102,15 +99,10 @@ async def chat(
     guardrails = get_guardrails_service()
     gemini = get_gemini_service()
 
-    # Start timing
     with RequestTimer() as timer:
-        # Validate input against guardrails
         guardrails.validate(request.message)
-
-        # Generate response from Gemini
         response_text, token_usage = await gemini.generate_response(request.message)
 
-    # Schedule background logging
     background_tasks.add_task(
         save_request_log,
         session=session,
@@ -130,5 +122,4 @@ async def chat(
     )
 
 
-# Mount static files (must be last to avoid shadowing API routes)
 app.mount("/", StaticFiles(directory="static", html=True), name="static")

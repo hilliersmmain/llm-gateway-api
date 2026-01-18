@@ -21,22 +21,10 @@ async def save_request_log(
     status: str = "success",
     error_message: str | None = None,
 ) -> None:
-    """
-    Save request log to database (background task).
-
-    Args:
-        session: Database session
-        input_prompt: User's input message
-        output_response: Generated response
-        latency_ms: Request latency in milliseconds
-        tokens_in: Input token count
-        tokens_out: Output token count
-        status: Request status (success/error)
-        error_message: Error message if any
-    """
+    """Save request log to database (background task)."""
     try:
         log_entry = RequestLog(
-            input_prompt=input_prompt[:5000],  # Truncate to prevent DB issues
+            input_prompt=input_prompt[:5000],
             output_response=output_response[:10000],
             latency_ms=latency_ms,
             tokens_in=tokens_in,
@@ -69,5 +57,4 @@ class RequestTimer:
 
     @property
     def elapsed_ms(self) -> float:
-        """Get elapsed time in milliseconds."""
         return (self.end_time - self.start_time) * 1000

@@ -10,14 +10,12 @@ from app.core.config import get_settings
 
 settings = get_settings()
 
-# Create async engine
 engine = create_async_engine(
     settings.database_url,
     echo=settings.log_level == "DEBUG",
     future=True,
 )
 
-# Create async session factory
 async_session = sessionmaker(
     engine,
     class_=AsyncSession,
@@ -26,13 +24,11 @@ async_session = sessionmaker(
 
 
 async def init_db() -> None:
-    """Initialize database tables."""
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
 
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
-    """Dependency to get database session."""
     async with async_session() as session:
         try:
             yield session

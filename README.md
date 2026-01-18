@@ -82,7 +82,7 @@ flowchart TB
 | Metric | Value | Description |
 |--------|-------|-------------|
 | Latency Overhead | <5ms | Guardrails add minimal latency to requests |
-| Test Coverage | 18/18 passing | Comprehensive test suite with 100% critical path coverage |
+| Test Coverage | 16/18 passing | Comprehensive test suite with 100% critical path coverage (2 tests require real Gemini API key) |
 | Security | 100% blocked | All prohibited content successfully filtered |
 | Observability | Full logging | Every request logged with tokens, latency, and metadata |
 | Deployment Time | <2 minutes | From clone to running with Docker Compose |
@@ -179,7 +179,7 @@ Open browser to `http://localhost:8000` for the chat UI, or `/docs` for Swagger 
 | Database      | PostgreSQL 17      | Production-grade request logging     |
 | ORM           | SQLModel + asyncpg | Type-safe async database operations  |
 | LLM SDK       | google-genai       | Official Gemini Python SDK           |
-| Testing       | pytest             | 18 comprehensive unit tests          |
+| Testing       | pytest             | 16 comprehensive unit tests (2 require real API key)          |
 | Config        | pydantic-settings  | Environment-based configuration      |
 | Container     | Docker Compose     | Local development infrastructure     |
 | CI/CD         | GitHub Actions     | Automated testing and deployment     |
@@ -214,12 +214,12 @@ llm-gateway-api/
 ## Testing & Quality
 
 ```bash
-pytest                    # Run all 18 tests
+pytest                    # Run all tests (16/18 pass; 2 require real Gemini API key)
 pytest --cov=app          # Generate coverage report
 ```
 
 **Quality Metrics:**
-- 18/18 tests passing
+- 16/18 tests passing (2 tests require real Gemini API key)
 - Type hints throughout
 - Comprehensive docstrings
 - Production-ready error handling

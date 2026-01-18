@@ -4,7 +4,6 @@ import logging
 import time
 from datetime import datetime
 
-from fastapi import BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.log import RequestLog

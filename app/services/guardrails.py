@@ -65,7 +65,7 @@ class GuardrailsService:
             if re.search(pattern, message_lower):
                 logger.warning(f"Message rejected: contains blocked keyword '{keyword}'")
                 raise GuardrailError(
-                    detail=f"Message contains prohibited content",
+                    detail="Message contains prohibited content",
                     error_type="blocked_content",
                 )
 

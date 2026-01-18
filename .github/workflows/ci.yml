@@ -36,7 +36,7 @@ jobs:
         env:
           DATABASE_URL: postgresql+asyncpg://user:password@localhost:5432/llm_gateway
           GEMINI_API_KEY: test_key
-        run: pytest tests/ -v --ignore=tests/test_api.py::TestChatEndpoint::test_chat_success --ignore=tests/test_api.py::TestChatEndpoint::test_chat_returns_token_usage
+        run: pytest tests/ -v --deselect=tests/test_api.py::TestChatEndpoint::test_chat_success --deselect=tests/test_api.py::TestChatEndpoint::test_chat_returns_token_usage
       - name: Lint
         run: |
           pip install ruff

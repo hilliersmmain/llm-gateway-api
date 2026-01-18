@@ -6,7 +6,6 @@ BASE_URL = "http://localhost:8000"
 
 
 def test_chat():
-    """Test the /chat endpoint with a simple message."""
     print("Testing POST /chat...")
     response = requests.post(
         f"{BASE_URL}/chat",
@@ -18,7 +17,6 @@ def test_chat():
 
 
 def test_health():
-    """Test the /health endpoint."""
     print("Testing GET /health...")
     response = requests.get(f"{BASE_URL}/health")
     print(f"Status: {response.status_code}")

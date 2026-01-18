@@ -15,7 +15,6 @@ class GeminiService:
     """Service for interacting with Google Gemini API."""
 
     def __init__(self) -> None:
-        """Initialize Gemini client."""
         self.client = genai.Client(api_key=settings.gemini_api_key)
         self.model = settings.model_name
 
@@ -41,10 +40,7 @@ class GeminiService:
                 ),
             )
 
-            # Extract response text
             response_text = response.text if response.text else ""
-
-            # Extract token usage from response metadata
             token_usage = {
                 "input_tokens": 0,
                 "output_tokens": 0,
@@ -65,12 +61,10 @@ class GeminiService:
             raise
 
 
-# Singleton instance
 _gemini_service: GeminiService | None = None
 
 
 def get_gemini_service() -> GeminiService:
-    """Get or create Gemini service instance."""
     global _gemini_service
     if _gemini_service is None:
         _gemini_service = GeminiService()

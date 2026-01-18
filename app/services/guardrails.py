@@ -26,7 +26,6 @@ class GuardrailsService:
     """Service for validating input against security guardrails."""
 
     def __init__(self) -> None:
-        """Initialize guardrails with configuration."""
         self.blocked_keywords = settings.blocked_keywords
         self.max_length = settings.max_input_length
 
@@ -45,7 +44,6 @@ class GuardrailsService:
         logger.info("Message passed all guardrail checks")
 
     def _check_length(self, message: str) -> None:
-        """Check if message exceeds maximum length."""
         if len(message) > self.max_length:
             logger.warning(
                 f"Message rejected: length {len(message)} exceeds max {self.max_length}"
@@ -56,11 +54,9 @@ class GuardrailsService:
             )
 
     def _check_blocklist(self, message: str) -> None:
-        """Check if message contains blocked keywords."""
         message_lower = message.lower()
 
         for keyword in self.blocked_keywords:
-            # Use word boundary matching for more accurate detection
             pattern = rf"\b{re.escape(keyword.lower())}\b"
             if re.search(pattern, message_lower):
                 logger.warning(f"Message rejected: contains blocked keyword '{keyword}'")
@@ -70,12 +66,10 @@ class GuardrailsService:
                 )
 
 
-# Singleton instance
 _guardrails_service: GuardrailsService | None = None
 
 
 def get_guardrails_service() -> GuardrailsService:
-    """Get or create guardrails service instance."""
     global _guardrails_service
     if _guardrails_service is None:
         _guardrails_service = GuardrailsService()

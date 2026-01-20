@@ -201,8 +201,12 @@ async def chat_stream(
             client_ip=client_ip,
         )
 
+        # Capture error details before creating generator to avoid scope issues
+        error_detail = e.detail
+        error_type = e.error_type
+
         async def error_generator():
-            error_data = json.dumps({"detail": e.detail, "error_type": e.error_type})
+            error_data = json.dumps({"detail": error_detail, "error_type": error_type})
             yield f"event: error\ndata: {error_data}\n\n"
 
         return StreamingResponse(

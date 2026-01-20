@@ -1,12 +1,13 @@
 """FastAPI application entry point."""
 
+import json
 import logging
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timezone
 
 from fastapi import BackgroundTasks, Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -146,6 +147,107 @@ async def chat(
     return ChatResponse(
         content=response_text,
         token_usage=token_usage,
+    )
+
+
+@app.post(
+    "/chat/stream",
+    tags=["Chat"],
+    summary="Stream a message to Gemini (SSE)",
+    description="Send a message and receive streaming response chunks via Server-Sent Events",
+)
+async def chat_stream(
+    request: ChatRequest,
+    background_tasks: BackgroundTasks,
+    session: AsyncSession = Depends(get_session),
+):
+    """
+    Process a chat request with streaming response.
+
+    - **message**: The user's input message (max 5000 characters)
+
+    Returns Server-Sent Events (SSE) stream with:
+    - `event: chunk` - Text chunks as they arrive
+    - `event: done` - Final event with token usage statistics
+    - `event: error` - Error event if something fails
+    """
+    guardrails = get_guardrails_service()
+    gemini = get_gemini_service()
+
+    # Validate input against guardrails (before streaming starts)
+    try:
+        guardrails.validate(request.message)
+    except GuardrailError as e:
+        # Return error as SSE event
+        async def error_generator():
+            error_data = json.dumps({"detail": e.detail, "error_type": e.error_type})
+            yield f"event: error\ndata: {error_data}\n\n"
+
+        return StreamingResponse(
+            error_generator(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
+
+    async def generate_sse():
+        """Generate Server-Sent Events from Gemini stream."""
+        import time
+
+        start_time = time.perf_counter()
+        full_response = ""
+        final_token_usage = {"input_tokens": 0, "output_tokens": 0}
+
+        try:
+            async for chunk_text, token_usage in gemini.generate_response_stream(
+                request.message
+            ):
+                if chunk_text:
+                    full_response += chunk_text
+                    # Send chunk as SSE event
+                    chunk_data = json.dumps({"text": chunk_text})
+                    yield f"event: chunk\ndata: {chunk_data}\n\n"
+
+                if token_usage:
+                    final_token_usage = token_usage
+
+            # Send done event with token usage
+            done_data = json.dumps({"token_usage": final_token_usage})
+            yield f"event: done\ndata: {done_data}\n\n"
+
+            # Calculate latency and log in background
+            end_time = time.perf_counter()
+            latency_ms = (end_time - start_time) * 1000
+
+            background_tasks.add_task(
+                save_request_log,
+                session=session,
+                input_prompt=request.message,
+                output_response=full_response,
+                latency_ms=latency_ms,
+                tokens_in=final_token_usage.get("input_tokens", 0),
+                tokens_out=final_token_usage.get("output_tokens", 0),
+                status="success",
+            )
+
+            logger.info(f"Streaming request completed in {latency_ms:.2f}ms")
+
+        except Exception as e:
+            logger.error(f"Streaming error: {e}")
+            error_data = json.dumps({"detail": str(e), "error_type": "streaming_error"})
+            yield f"event: error\ndata: {error_data}\n\n"
+
+    return StreamingResponse(
+        generate_sse(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
     )
 
 

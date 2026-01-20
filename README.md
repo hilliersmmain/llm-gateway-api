@@ -95,6 +95,34 @@ curl http://localhost:8000/health
 
 ---
 
+## Configuration
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `GEMINI_API_KEY` | *required* | Your Google Gemini API key |
+| `DATABASE_URL` | `postgresql+asyncpg://...` | PostgreSQL connection URL |
+| `LOG_LEVEL` | `INFO` | Logging level (DEBUG, INFO, WARNING, ERROR) |
+| `RATE_LIMIT_REQUESTS` | `10` | Maximum requests per IP in time window |
+| `RATE_LIMIT_WINDOW_SECONDS` | `60` | Time window for rate limiting in seconds |
+| `REDIS_URL` | *(optional)* | Redis URL for distributed rate limiting |
+
+### Rate Limiting
+
+The API includes built-in rate limiting to prevent abuse:
+- **Default:** 10 requests per 60 seconds per IP address
+- **Backend:** In-memory (single instance) or Redis (distributed)
+- **Excluded paths:** `/health`, `/metrics`, `/docs`, `/redoc`
+
+To enable Redis-based distributed rate limiting:
+```bash
+# In .env
+REDIS_URL=redis://localhost:6379/0
+```
+
+---
+
 ## License
 
 MIT License

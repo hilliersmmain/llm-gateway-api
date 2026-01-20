@@ -15,16 +15,20 @@ from app.services.guardrails import GuardrailsService
 
 @asynccontextmanager
 async def empty_lifespan(app: FastAPI):
+    """Empty lifespan that skips database initialization."""
     yield
 
 
 @pytest.fixture(scope="session")
 def test_app() -> FastAPI:
+    """Create test app with empty lifespan (no DB init)."""
+    # Create a new app with empty lifespan
     test_app = FastAPI(
         title="LLM Gateway API - Test",
         lifespan=empty_lifespan,
     )
     
+    # Copy all routes from the main app (except the root which mounts static files)
     for route in app.routes:
         if hasattr(route, "path"):
             test_app.router.routes.append(route)
@@ -34,6 +38,7 @@ def test_app() -> FastAPI:
 
 @pytest.fixture
 def mock_db_session():
+    """Create a mock AsyncSession that doesn't connect to real database."""
     session = MagicMock(spec=AsyncSession)
     session.add = AsyncMock()
     session.commit = AsyncMock()
@@ -51,16 +56,36 @@ class MockGeminiService:
         self.token_usage = token_usage or {"input_tokens": 10, "output_tokens": 15}
 
     async def generate_response(self, message: str) -> tuple[str, dict]:
+        """Return mock response without calling actual API."""
         return self.response_text, self.token_usage
+
+    async def generate_response_stream(self, message: str):
+        """Yield mock streaming chunks without calling actual API."""
+        # Split response into chunks to simulate streaming
+        words = self.response_text.split()
+        chunk_size = max(1, len(words) // 3)  # Split into ~3 chunks
+
+        for i in range(0, len(words), chunk_size):
+            chunk_words = words[i : i + chunk_size]
+            chunk_text = " ".join(chunk_words)
+            if i > 0:
+                chunk_text = " " + chunk_text  # Add space between chunks
+            yield chunk_text, None
+
+        # Final chunk with token usage
+        yield "", self.token_usage
 
 
 @pytest.fixture
 def mock_gemini():
+    """Fixture providing a mock Gemini service."""
     return MockGeminiService()
 
 
 @pytest.fixture
 def client(test_app: FastAPI, mock_db_session, mock_gemini):
+    """Create a TestClient with mocked dependencies."""
+    # Override database session
     async def override_get_session():
         yield mock_db_session
     
@@ -70,9 +95,11 @@ def client(test_app: FastAPI, mock_db_session, mock_gemini):
     with TestClient(test_app) as test_client:
         yield test_client
     
+    # Clean up overrides after test
     test_app.dependency_overrides.clear()
 
 
 @pytest.fixture
 def guardrails_service():
+    """Create a fresh GuardrailsService instance for each test."""
     return GuardrailsService()

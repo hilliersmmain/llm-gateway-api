@@ -91,7 +91,34 @@ docker-compose up -d --build
 
 # Verify it's running
 curl http://localhost:8000/health
+
+# Or run the automated verification script
+./scripts/verify_startup.sh
 ```
+
+---
+
+## Verification
+
+To verify all components are working correctly:
+
+```bash
+# Run the comprehensive verification script
+./scripts/verify_startup.sh
+
+# The script will:
+# - Check prerequisites
+# - Build and start services
+# - Verify database health
+# - Test API endpoints
+# - Confirm table creation
+# - Check for errors
+
+# To cleanup after verification:
+./scripts/verify_startup.sh --cleanup
+```
+
+See [VERIFICATION.md](./VERIFICATION.md) for detailed verification results and troubleshooting.
 
 ---
 

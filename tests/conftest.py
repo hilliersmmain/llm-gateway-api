@@ -1,5 +1,6 @@
 """Shared pytest fixtures for LLM Gateway API tests."""
 
+import os
 import pytest
 import pytest_asyncio
 from contextlib import asynccontextmanager
@@ -16,6 +17,9 @@ from app.services.gemini import get_gemini_service
 from app.services.guardrails import GuardrailsService
 # Import models to ensure they are registered with SQLModel metadata
 from app.models.log import RequestLog, GuardrailLog
+
+# Test database configuration
+TEST_DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
 
 
 @asynccontextmanager
@@ -114,13 +118,9 @@ def guardrails_service():
 @pytest_asyncio.fixture(scope="function")
 async def db_session():
     """Create a real async database session with tables for testing."""
-    # Use in-memory SQLite for testing (or connect to test database)
-    import os
-    database_url = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
-    
     # Create async engine for tests
     test_engine = create_async_engine(
-        database_url,
+        TEST_DATABASE_URL,
         echo=False,
         future=True,
     )

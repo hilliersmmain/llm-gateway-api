@@ -8,6 +8,9 @@ from sqlmodel import SQLModel
 
 from app.core.config import get_settings
 
+# Import models to register them with SQLModel metadata
+from app.models.log import RequestLog, GuardrailLog  # noqa: F401
+
 settings = get_settings()
 
 engine = create_async_engine(

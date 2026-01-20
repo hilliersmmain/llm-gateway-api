@@ -1,16 +1,21 @@
 """Shared pytest fixtures for LLM Gateway API tests."""
 
 import pytest
+import pytest_asyncio
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.orm import sessionmaker
+from sqlmodel import SQLModel
 
 from app.main import app
 from app.core.database import get_session
 from app.services.gemini import get_gemini_service
 from app.services.guardrails import GuardrailsService
+# Import models to ensure they are registered with SQLModel metadata
+from app.models.log import RequestLog, GuardrailLog
 
 
 @asynccontextmanager
@@ -103,3 +108,40 @@ def client(test_app: FastAPI, mock_db_session, mock_gemini):
 def guardrails_service():
     """Create a fresh GuardrailsService instance for each test."""
     return GuardrailsService()
+
+
+# Real database session fixture for tests that need actual tables
+@pytest_asyncio.fixture(scope="function")
+async def db_session():
+    """Create a real async database session with tables for testing."""
+    # Use in-memory SQLite for testing (or connect to test database)
+    import os
+    database_url = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
+    
+    # Create async engine for tests
+    test_engine = create_async_engine(
+        database_url,
+        echo=False,
+        future=True,
+    )
+    
+    # Create all tables
+    async with test_engine.begin() as conn:
+        await conn.run_sync(SQLModel.metadata.create_all)
+    
+    # Create session
+    test_session_maker = sessionmaker(
+        test_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+    
+    async with test_session_maker() as session:
+        yield session
+        await session.rollback()
+    
+    # Drop all tables after test
+    async with test_engine.begin() as conn:
+        await conn.run_sync(SQLModel.metadata.drop_all)
+    
+    await test_engine.dispose()

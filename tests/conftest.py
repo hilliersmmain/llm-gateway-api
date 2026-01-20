@@ -16,7 +16,7 @@ from app.core.database import get_session
 from app.services.gemini import get_gemini_service
 from app.services.guardrails import GuardrailsService
 # Import models to ensure they are registered with SQLModel metadata
-from app.models.log import RequestLog, GuardrailLog
+from app.models import RequestLog, GuardrailLog
 
 # Test database configuration
 TEST_DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///:memory:")

@@ -2,20 +2,31 @@
 
 import logging
 from contextlib import asynccontextmanager
+from datetime import date, datetime, timezone
 
 from fastapi import BackgroundTasks, Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.database import get_session, init_db
 from app.middleware.logging import RequestTimer, save_request_log
-from app.models.schemas import ChatRequest, ChatResponse, ErrorResponse, HealthResponse
+from app.middleware.rate_limit import RateLimitMiddleware, create_rate_limit_store
+from app.models.log import RequestLog
+from app.models.schemas import (
+    ChatRequest,
+    ChatResponse,
+    ErrorResponse,
+    HealthResponse,
+    MetricsResponse,
+)
 from app.services.gemini import get_gemini_service
 from app.services.guardrails import GuardrailError, get_guardrails_service
 
+# Configure logging
 settings = get_settings()
 logging.basicConfig(
     level=getattr(logging, settings.log_level.upper()),
@@ -34,6 +45,7 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down...")
 
 
+# Create FastAPI application
 app = FastAPI(
     title="LLM Gateway API",
     description="Enterprise-grade LLM gateway with input validation and request logging",
@@ -43,12 +55,22 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
+# Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+)
+
+# Add rate limiting middleware
+rate_limit_store = create_rate_limit_store(settings.redis_url)
+app.add_middleware(
+    RateLimitMiddleware,
+    store=rate_limit_store,
+    max_requests=settings.rate_limit_requests,
+    window_seconds=settings.rate_limit_window_seconds,
 )
 
 
@@ -99,10 +121,15 @@ async def chat(
     guardrails = get_guardrails_service()
     gemini = get_gemini_service()
 
+    # Start timing
     with RequestTimer() as timer:
+        # Validate input against guardrails
         guardrails.validate(request.message)
+
+        # Generate response from Gemini
         response_text, token_usage = await gemini.generate_response(request.message)
 
+    # Schedule background logging
     background_tasks.add_task(
         save_request_log,
         session=session,
@@ -122,4 +149,52 @@ async def chat(
     )
 
 
+@app.get(
+    "/metrics",
+    response_model=MetricsResponse,
+    tags=["Metrics"],
+    summary="Get API usage metrics",
+    description="Returns today's usage statistics including request count, token usage, and estimated cost",
+)
+async def get_metrics(session: AsyncSession = Depends(get_session)):
+    """
+    Get API usage metrics for today.
+
+    Returns:
+    - **total_requests_today**: Number of requests made today
+    - **total_tokens_in**: Total input tokens consumed today
+    - **total_tokens_out**: Total output tokens consumed today
+    - **estimated_cost_usd**: Estimated cost based on Gemini 2.5 Flash pricing
+    """
+    # Get start of today in UTC
+    today_start = datetime.combine(date.today(), datetime.min.time(), tzinfo=timezone.utc)
+
+    # Query aggregated metrics from request_logs
+    query = select(
+        func.count(RequestLog.id).label("total_requests"),
+        func.coalesce(func.sum(RequestLog.tokens_in), 0).label("total_tokens_in"),
+        func.coalesce(func.sum(RequestLog.tokens_out), 0).label("total_tokens_out"),
+    ).where(RequestLog.timestamp >= today_start)
+
+    result = await session.execute(query)
+    row = result.one()
+
+    total_requests = row.total_requests
+    total_tokens_in = row.total_tokens_in
+    total_tokens_out = row.total_tokens_out
+
+    # Calculate estimated cost using Gemini pricing
+    input_cost = (total_tokens_in / 1_000_000) * settings.gemini_input_price_per_million
+    output_cost = (total_tokens_out / 1_000_000) * settings.gemini_output_price_per_million
+    estimated_cost = round(input_cost + output_cost, 6)
+
+    return MetricsResponse(
+        total_requests_today=total_requests,
+        total_tokens_in=total_tokens_in,
+        total_tokens_out=total_tokens_out,
+        estimated_cost_usd=estimated_cost,
+    )
+
+
+# Mount static files (must be last to avoid shadowing API routes)
 app.mount("/", StaticFiles(directory="static", html=True), name="static")

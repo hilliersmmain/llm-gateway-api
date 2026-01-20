@@ -7,6 +7,9 @@ sqlmodel>=0.0.22
 asyncpg>=0.30.0
 greenlet>=3.1.0
 
+# Redis (optional, for distributed rate limiting)
+redis>=5.0.0
+
 # Google Gemini SDK
 google-genai>=1.0.0
 

@@ -6,7 +6,7 @@ services:
       dockerfile: Dockerfile
     container_name: llm_gateway_api
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     environment:
       - DATABASE_URL=postgresql+asyncpg://user:password@db:5432/llm_gateway
       - GEMINI_API_KEY=${GEMINI_API_KEY}
@@ -35,7 +35,7 @@ services:
       POSTGRES_PASSWORD: password
       POSTGRES_DB: llm_gateway
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:

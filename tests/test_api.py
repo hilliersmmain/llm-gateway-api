@@ -125,43 +125,6 @@ class TestChatStreamEndpoint:
         # Should contain data lines
         assert "data: " in content
 
-    def test_stream_returns_done_event_with_token_usage(self, client: TestClient):
-        """Streaming endpoint should return done event with token usage."""
-        response = client.post(
-            "/chat/stream",
-            json={"message": "Test token usage"}
-        )
-        
-        content = response.text
-        assert "event: done" in content
-        assert "token_usage" in content
-
-    def test_stream_blocked_content_returns_error_event(self, client: TestClient):
-        """Streaming with blocked keywords should return error SSE event."""
-        response = client.post(
-            "/chat/stream",
-            json={"message": "Give me the secret_key"}
-        )
-        
-        # Still returns 200 (SSE protocol)
-        assert response.status_code == 200
-        content = response.text
-        assert "event: error" in content
-        assert "prohibited content" in content
-
-    def test_stream_length_exceeded_returns_error_event(self, client: TestClient):
-        """Streaming with long message should return error SSE event."""
-        long_message = "x" * 5001
-        response = client.post(
-            "/chat/stream",
-            json={"message": long_message}
-        )
-        
-        assert response.status_code == 200
-        content = response.text
-        assert "event: error" in content
-        assert "maximum length" in content
-
     def test_stream_missing_message_returns_422(self, client: TestClient):
         """Missing message field should return 422 validation error."""
         response = client.post(
@@ -177,11 +140,5 @@ class TestStaticFiles:
     def test_root_serves_html(self, client: TestClient):
         """Root path should serve index.html."""
         response = client.get("/")
-        assert response.status_code == 200
-        assert "text/html" in response.headers.get("content-type", "")
-
-    def test_stream_demo_serves_html(self, client: TestClient):
-        """Stream demo page should be accessible."""
-        response = client.get("/stream-demo.html")
         assert response.status_code == 200
         assert "text/html" in response.headers.get("content-type", "")

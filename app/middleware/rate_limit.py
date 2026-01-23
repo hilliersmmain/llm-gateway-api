@@ -2,7 +2,6 @@
 
 import logging
 import time
-from abc import ABC, abstractmethod
 from typing import Protocol
 
 from fastapi import Request, Response
@@ -96,7 +95,6 @@ class RedisRateLimitStore:
         cutoff = now - window_seconds
         
         # Parse URL and create sync connection
-        redis_url = str(self._redis.connection_pool.connection_kwargs.get('host', 'localhost'))
         client = sync_redis.from_url(
             self._redis.connection_pool.connection_kwargs.get('url', 'redis://localhost:6379'),
             decode_responses=True

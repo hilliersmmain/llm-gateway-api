@@ -1,6 +1,5 @@
 """Tests for analytics/guardrail logging."""
 
-import pytest
 from fastapi.testclient import TestClient
 
 

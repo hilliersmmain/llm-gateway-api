@@ -202,12 +202,12 @@ async def chat_stream(
             client_ip=client_ip,
         )
 
-        async def error_generator():
-            error_data = json.dumps({"detail": e.detail, "error_type": e.error_type})
+        async def error_generator(detail: str, error_type: str):
+            error_data = json.dumps({"detail": detail, "error_type": error_type})
             yield f"event: error\ndata: {error_data}\n\n"
 
         return StreamingResponse(
-            error_generator(),
+            error_generator(e.detail, e.error_type),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
         )

@@ -103,7 +103,7 @@ class TestCreateRateLimitStore:
         """Should create Redis store when redis_url is provided."""
         with patch("app.middleware.rate_limit.RedisRateLimitStore") as mock_redis:
             mock_redis.return_value = MagicMock()
-            store = create_rate_limit_store(redis_url="redis://localhost:6379")
+            create_rate_limit_store(redis_url="redis://localhost:6379")
             mock_redis.assert_called_once_with("redis://localhost:6379")
 
 

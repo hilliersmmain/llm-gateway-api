@@ -27,9 +27,10 @@ from app.models.schemas import (
     LatencyBucket,
     MetricsResponse,
 )
-from app.services.gemini import get_gemini_service
+from app.services.gemini import GeminiService, get_gemini_service
 from app.services.guardrails import (
     GuardrailError,
+    GuardrailsService,
     get_guardrails_service,
     save_guardrail_log,
 )
@@ -131,10 +132,10 @@ async def chat(
     request: Request,
     background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_session),
+    guardrails: GuardrailsService = Depends(get_guardrails_service),
+    gemini: GeminiService = Depends(get_gemini_service),
 ):
     """Process a chat request through guardrails and Gemini."""
-    guardrails = get_guardrails_service()
-    gemini = get_gemini_service()
     client_ip = get_client_ip(request)
 
     with RequestTimer() as timer:
@@ -183,10 +184,10 @@ async def chat_stream(
     request: Request,
     background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_session),
+    guardrails: GuardrailsService = Depends(get_guardrails_service),
+    gemini: GeminiService = Depends(get_gemini_service),
 ):
     """Process a chat request with streaming response."""
-    guardrails = get_guardrails_service()
-    gemini = get_gemini_service()
     client_ip = get_client_ip(request)
 
     try:
@@ -326,8 +327,8 @@ async def get_analytics(
             func.count(RequestLog.id).label("request_count"),
         )
         .where(RequestLog.timestamp >= time_24h_ago)
-        .group_by(func.date_trunc("hour", RequestLog.timestamp))
-        .order_by(func.date_trunc("hour", RequestLog.timestamp))
+        .group_by("hour")
+        .order_by("hour")
     )
     latency_rows = (await session.execute(latency_query)).all()
     latency_trend = [

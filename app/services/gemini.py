@@ -1,8 +1,11 @@
 """Gemini API service using google-genai SDK."""
 
 import logging
+import json
 from collections.abc import AsyncGenerator
 
+from google.api_core import exceptions as google_exceptions
+from fastapi import HTTPException
 from google import genai
 from google.genai import types
 
@@ -69,6 +72,12 @@ class GeminiService:
             logger.info(f"Streaming complete. Tokens: {token_usage}")
 
         except Exception as e:
+            if isinstance(e, google_exceptions.ResourceExhausted):
+                logger.warning(f"Gemini quota exceeded: {e}")
+                error_data = {"detail": "Gemini quota exceeded. Please try again later.", "error_type": "quota_exceeded"}
+                yield f"event: error\ndata: {json.dumps(error_data)}\n\n"
+                return
+
             logger.error(f"Gemini streaming API error: {e}")
             raise
 
@@ -114,6 +123,12 @@ class GeminiService:
             return response_text, token_usage
 
         except Exception as e:
+            if isinstance(e, google_exceptions.ResourceExhausted):
+                logger.warning(f"Gemini quota exceeded: {e}")
+                raise HTTPException(
+                    status_code=429,
+                    detail="Gemini quota exceeded. Please try again later."
+                )
             logger.error(f"Gemini API error: {e}")
             raise
 

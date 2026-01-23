@@ -2,7 +2,7 @@
 
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,7 +29,7 @@ async def save_request_log(
             latency_ms=latency_ms,
             tokens_in=tokens_in,
             tokens_out=tokens_out,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             status=status,
             error_message=error_message,
         )

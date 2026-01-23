@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    
+
     services:
       postgres:
         image: postgres:17
@@ -31,14 +31,14 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: "3.12"
       - name: Install dependencies
         run: pip install -r requirements.txt
       - name: Run tests
         env:
           DATABASE_URL: postgresql+asyncpg://user:password@localhost:5432/llm_gateway
           GEMINI_API_KEY: test_key
-        run: pytest tests/ -v --deselect=tests/test_api.py::TestChatEndpoint::test_chat_success --deselect=tests/test_api.py::TestChatEndpoint::test_chat_returns_token_usage
+        run: pytest tests/ -v
       - name: Lint
         run: |
           pip install ruff

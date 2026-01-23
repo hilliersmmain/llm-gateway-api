@@ -74,9 +74,12 @@
             right: 2rem;
             top: 50%;
             transform: translateY(-50%);
+            display: flex;
+            gap: 0.5rem;
+            z-index: 50; /* Ensure visibility over backdrop-filter */
         }
 
-        .clear-btn {
+        .icon-btn, .clear-btn {
             background: rgba(255, 255, 255, 0.1);
             border: 1px solid var(--glass-border);
             color: var(--text-secondary);
@@ -88,6 +91,13 @@
             display: flex;
             align-items: center;
             justify-content: center;
+            text-decoration: none;
+        }
+
+        .icon-btn:hover, .clear-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            border-color: rgba(255, 255, 255, 0.3);
         }
 
         .clear-btn:hover {
@@ -373,6 +383,14 @@
     <header>
         <h1>LLM Gateway</h1>
         <div class="header-controls">
+            <a href="/analytics?format=html" class="icon-btn" title="View Analytics">
+                <svg viewBox="0 0 24 24" width="16" height="16">
+                    <path d="M3 3v18h18" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+                    <path d="M18 17V9" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+                    <path d="M13 17V5" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+                    <path d="M8 17v-3" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+                </svg>
+            </a>
             <button class="clear-btn" id="clear-btn" title="Clear Chat History">
                 <svg viewBox="0 0 24 24" width="16" height="16">
                     <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>

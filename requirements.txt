@@ -1,6 +1,7 @@
 # Core Framework
 fastapi[standard]>=0.115.0
 uvicorn[standard]>=0.32.0
+gunicorn>=21.2.0
 
 # Database
 sqlmodel>=0.0.22

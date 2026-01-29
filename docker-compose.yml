@@ -32,7 +32,7 @@ services:
     container_name: llm_gateway_db
     environment:
       POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
       POSTGRES_DB: llm_gateway
     ports:
       - "127.0.0.1:5432:5432"

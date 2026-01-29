@@ -29,7 +29,7 @@ async def save_request_log(
             latency_ms=latency_ms,
             tokens_in=tokens_in,
             tokens_out=tokens_out,
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(timezone.utc).replace(tzinfo=None),
             status=status,
             error_message=error_message,
         )

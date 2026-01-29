@@ -1,688 +1,128 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>LLM Gateway</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <!-- Highlight.js Theme (Atom One Dark) -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
-    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Fira+Code&display=swap"
+      rel="stylesheet"
+    />
+    <!-- Icons -->
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+    />
+    <!-- Styles -->
+    <link rel="stylesheet" href="style.css" />
+    <!-- Markdown Parser -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-
-    <style>
-        :root {
-            --bg-color: #0f172a;
-            --chat-bg: #1e293b;
-            --user-msg-bg: #334155;
-            --ai-msg-bg: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
-            --text-primary: #f8fafc;
-            --text-secondary: #94a3b8;
-            --accent: #3b82f6;
-            --glass-border: rgba(255, 255, 255, 0.1);
-            --code-bg: #282c34;
-        }
-
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
-
-        body {
-            font-family: 'Inter', sans-serif;
-            background-color: var(--bg-color);
-            color: var(--text-primary);
-            height: 100vh;
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-        }
-
-        /* Glassmorphism Background Elements */
-        .bg-blob {
-            position: absolute;
-            border-radius: 50%;
-            filter: blur(80px);
-            opacity: 0.4;
-            z-index: -1;
-        }
-        .blob-1 { top: -10%; left: -10%; width: 500px; height: 500px; background: #3b82f6; }
-        .blob-2 { bottom: -10%; right: -10%; width: 400px; height: 400px; background: #8b5cf6; }
-
-        header {
-            padding: 1.5rem;
-            text-align: center;
-            border-bottom: 1px solid var(--glass-border);
-            background: rgba(15, 23, 42, 0.7);
-            backdrop-filter: blur(10px);
-        }
-
-        h1 {
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
+  </head>
+  <body>
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <h2
+          style="
             font-weight: 600;
-            font-size: 1.5rem;
-            background: linear-gradient(to right, #60a5fa, #a78bfa);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
+            font-size: 1.25rem;
+            margin-bottom: 1rem;
+            color: var(--text-primary);
+          "
+        >
+          LLM Gateway
+        </h2>
+        <button id="newChatBtn" class="new-chat-btn">
+          <i class="fas fa-plus"></i> New Chat
+        </button>
+      </div>
 
-        .header-controls {
-            position: absolute;
-            right: 2rem;
-            top: 50%;
-            transform: translateY(-50%);
-            display: flex;
-            gap: 0.5rem;
-            z-index: 50; /* Ensure visibility over backdrop-filter */
-        }
+      <div class="history-list" id="historyList">
+        <!-- History Items will be injected here -->
+      </div>
 
-        .icon-btn, .clear-btn {
-            background: rgba(255, 255, 255, 0.1);
-            border: 1px solid var(--glass-border);
-            color: var(--text-secondary);
-            width: 2.5rem;
-            height: 2.5rem;
-            border-radius: 50%;
-            cursor: pointer;
-            transition: all 0.2s;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            text-decoration: none;
-        }
+      <div
+        style="
+          margin-top: auto;
+          padding-top: 1rem;
+          border-top: 1px solid var(--border-color);
+          display: flex;
+          flex-direction: column;
+          gap: 0.5rem;
+        "
+      >
+        <div class="history-item" id="themeToggleBtn">
+          <span><i class="fas fa-moon"></i> Dark Mode</span>
+        </div>
+        <a href="/docs" class="history-item" style="text-decoration: none">
+          <span><i class="fas fa-book"></i> API Docs</span>
+        </a>
+        <a
+          href="/analytics?format=html"
+          class="history-item"
+          style="text-decoration: none"
+        >
+          <span><i class="fas fa-chart-bar"></i> Analytics</span>
+        </a>
+      </div>
+    </aside>
 
-        .icon-btn:hover, .clear-btn:hover {
-            background: rgba(255, 255, 255, 0.2);
-            color: white;
-            border-color: rgba(255, 255, 255, 0.3);
-        }
-
-        .clear-btn:hover {
-            background: rgba(239, 68, 68, 0.2);
-            color: #ef4444;
-            border-color: rgba(239, 68, 68, 0.3);
-        }
-
-        #chat-container {
-            flex: 1;
-            overflow-y: auto;
-            padding: 2rem;
-            display: flex;
-            flex-direction: column;
-            gap: 1.5rem;
-            max-width: 900px;
-            margin: 0 auto;
-            width: 100%;
-            scroll-behavior: smooth;
-        }
-
-        .message-wrapper {
-            display: flex;
-            flex-direction: column;
-            max-width: 85%;
-            animation: fadeIn 0.3s ease-out;
-        }
-
-        .message-wrapper.user {
-            align-self: flex-end;
-            align-items: flex-end;
-        }
-
-        .message-wrapper.ai {
-            align-self: flex-start;
-            align-items: flex-start;
-        }
-
-        .message-content {
-            padding: 1rem 1.5rem;
-            border-radius: 1rem;
+    <!-- Main Content -->
+    <main class="main-content">
+      <div class="chat-header">
+        <button class="menu-toggle" id="menuToggle">
+          <i class="fas fa-bars"></i>
+        </button>
+        <h3
+          id="currentChatTitle"
+          style="
             font-size: 1rem;
-            line-height: 1.6;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-            overflow-wrap: break-word;
-        }
-
-        .user .message-content {
-            background-color: var(--user-msg-bg);
-            border-bottom-right-radius: 0.25rem;
-            color: var(--text-primary);
-        }
-
-        .ai .message-content {
-            background: rgba(30, 41, 59, 0.8); /* Slightly transparent dark for AI to show highlighting better */
-            border: 1px solid var(--glass-border);
-            backdrop-filter: blur(5px);
-            border-bottom-left-radius: 0.25rem;
-            color: var(--text-primary);
-        }
-        
-        /* Markdown Styles within AI messages */
-        .ai .message-content h1, .ai .message-content h2, .ai .message-content h3 {
-            margin-top: 1rem;
-            margin-bottom: 0.5rem;
-            color: #e2e8f0;
-        }
-        .ai .message-content h1:first-child, .ai .message-content h2:first-child { margin-top: 0; }
-        
-        .ai .message-content p { margin-bottom: 0.75rem; }
-        .ai .message-content p:last-child { margin-bottom: 0; }
-
-        .ai .message-content code {
-            font-family: 'JetBrains Mono', monospace;
-            background: rgba(0, 0, 0, 0.3);
-            padding: 0.2rem 0.4rem;
-            border-radius: 0.25rem;
-            font-size: 0.9em;
-        }
-
-        .ai .message-content pre {
-            background: var(--code-bg) !important;
-            padding: 0;
-            border-radius: 0.5rem;
-            overflow-x: auto;
-            margin: 0.75rem 0;
-            position: relative;
-            border: 1px solid var(--glass-border);
-        }
-
-        .ai .message-content pre code {
-            background: transparent;
-            padding: 1rem;
-            display: block;
-            color: inherit;
-        }
-
-        /* Copy Button */
-        .copy-btn {
-            position: absolute;
-            top: 0.5rem;
-            right: 0.5rem;
-            background: rgba(255, 255, 255, 0.1);
-            border: none;
             color: var(--text-secondary);
-            padding: 0.25rem 0.5rem;
-            border-radius: 0.25rem;
-            font-size: 0.75rem;
-            cursor: pointer;
-            transition: all 0.2s;
-            opacity: 0;
-        }
+            font-weight: 500;
+          "
+        >
+          New Conversation
+        </h3>
+      </div>
 
-        pre:hover .copy-btn {
-            opacity: 1;
-        }
+      <div id="chat-container">
+        <!-- Messages will appear here -->
+        <div class="message bot">
+          <div class="avatar"><i class="fas fa-robot"></i></div>
+          <div class="message-content">
+            <p>Hello! I am your AI assistant. How can I help you today?</p>
+          </div>
+        </div>
+      </div>
 
-        .copy-btn:hover {
-            background: rgba(255, 255, 255, 0.2);
-            color: white;
-        }
-
-        .meta-info {
+      <div class="input-area">
+        <div class="input-container">
+          <textarea
+            id="userInput"
+            placeholder="Type your message..."
+            rows="1"
+          ></textarea>
+          <button id="send-btn" disabled>
+            <i class="fas fa-paper-plane"></i>
+          </button>
+        </div>
+        <div
+          style="
+            text-align: center;
+            margin-top: 0.5rem;
             font-size: 0.75rem;
             color: var(--text-secondary);
-            margin-top: 0.25rem;
-            opacity: 0.8;
-            margin-left: 0.5rem;
-            margin-right: 0.5rem;
-        }
-
-        #input-area {
-            padding: 2rem;
-            background: rgba(15, 23, 42, 0.7);
-            backdrop-filter: blur(10px);
-            border-top: 1px solid var(--glass-border);
-            display: flex;
-            justify-content: center;
-        }
-
-        .input-wrapper {
-            position: relative;
-            width: 100%;
-            max-width: 900px;
-            display: flex;
-            gap: 1rem;
-        }
-
-        textarea {
-            flex: 1;
-            padding: 1rem 1.5rem;
-            border-radius: 1.5rem;
-            border: 1px solid var(--glass-border);
-            background: rgba(30, 41, 59, 0.6);
-            color: var(--text-primary);
-            font-size: 1rem;
-            outline: none;
-            transition: all 0.2s;
-            font-family: inherit;
-            resize: none;
-            height: 3.5rem; /* Initial height */
-            line-height: 1.5;
-            overflow-y: hidden;
-            max-height: 200px;
-        }
-
-        textarea:focus {
-            background: rgba(30, 41, 59, 0.9);
-            border-color: var(--accent);
-            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
-        }
-
-        button {
-            background: var(--accent);
-            color: white;
-            border: none;
-            border-radius: 50%;
-            width: 3.5rem;
-            height: 3.5rem;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: transform 0.2s, background-color 0.2s;
-            align-self: flex-end; /* Align to bottom if textarea grows */
-        }
-
-        button:hover {
-            background-color: #2563eb;
-            transform: scale(1.05);
-        }
-
-        button:disabled {
-            background-color: var(--text-secondary);
-            cursor: not-allowed;
-            transform: none;
-        }
-
-        button svg {
-            width: 1.5rem;
-            height: 1.5rem;
-            fill: none;
-            stroke: currentColor;
-            stroke-width: 2;
-            stroke-linecap: round;
-            stroke-linejoin: round;
-        }
-
-        /* Loading Spinner */
-        .typing-indicator {
-            display: flex;
-            gap: 0.5rem;
-            padding: 1rem 1.5rem;
-            background: var(--chat-bg);
-            border-radius: 1rem;
-            border-bottom-left-radius: 0.25rem;
-            width: fit-content;
-        }
-
-        .dot {
-            width: 8px;
-            height: 8px;
-            background: var(--text-secondary);
-            border-radius: 50%;
-            animation: bounce 1.4s infinite ease-in-out both;
-        }
-
-        .dot:nth-child(1) { animation-delay: -0.32s; }
-        .dot:nth-child(2) { animation-delay: -0.16s; }
-
-        @keyframes bounce {
-            0%, 80%, 100% { transform: scale(0); }
-            40% { transform: scale(1); }
-        }
-
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        /* Scrollbar */
-        ::-webkit-scrollbar {
-            width: 8px;
-        }
-        ::-webkit-scrollbar-track {
-            background: transparent;
-        }
-        ::-webkit-scrollbar-thumb {
-            background: var(--user-msg-bg);
-            border-radius: 4px;
-        }
-        ::-webkit-scrollbar-thumb:hover {
-            background: var(--text-secondary);
-        }
-
-        .error-toast {
-            position: fixed;
-            top: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            background-color: #ef4444;
-            color: white;
-            padding: 1rem 2rem;
-            border-radius: 0.5rem;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.2);
-            z-index: 100;
-            display: none;
-            animation: slideDown 0.3s ease-out;
-        }
-
-        @keyframes slideDown {
-            from { transform: translate(-50%, -100%); opacity: 0; }
-            to { transform: translate(-50%, 0); opacity: 1; }
-        }
-
-
-    </style>
-</head>
-<body>
-    <div class="bg-blob blob-1"></div>
-    <div class="bg-blob blob-2"></div>
-
-    <header>
-        <h1>LLM Gateway</h1>
-        <div class="header-controls">
-            <a href="/analytics?format=html" class="icon-btn" title="View Analytics">
-                <svg viewBox="0 0 24 24" width="16" height="16">
-                    <path d="M3 3v18h18" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
-                    <path d="M18 17V9" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
-                    <path d="M13 17V5" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
-                    <path d="M8 17v-3" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
-                </svg>
-            </a>
-            <button class="clear-btn" id="clear-btn" title="Clear Chat History">
-                <svg viewBox="0 0 24 24" width="16" height="16">
-                    <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
-                </svg>
-            </button>
+          "
+        >
+          AI can make mistakes. Please verify important information.
         </div>
-    </header>
+      </div>
+    </main>
 
-    <div id="error-toast" class="error-toast"></div>
-
-    <div id="chat-container">
-        <!-- Welcome Message -->
-        <div class="message-wrapper ai">
-            <div class="message-content">
-                Hello! I am your AI assistant. How can I help you today?
-            </div>
-            <div class="meta-info">System</div>
-        </div>
-    </div>
-
-    <div id="input-area">
-        <form class="input-wrapper" id="chat-form">
-            <textarea id="user-input" placeholder="Type your message..." rows="1"></textarea>
-            <button type="submit" id="send-btn">
-                <svg viewBox="0 0 24 24">
-                    <line x1="22" y1="2" x2="11" y2="13"></line>
-                    <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-                </svg>
-            </button>
-        </form>
-    </div>
-
-    <script>
-        const chatContainer = document.getElementById('chat-container');
-        const chatForm = document.getElementById('chat-form');
-        const userInput = document.getElementById('user-input');
-        const sendBtn = document.getElementById('send-btn');
-        const clearBtn = document.getElementById('clear-btn');
-        const errorToast = document.getElementById('error-toast');
-
-        // State Management
-        let chatHistory = JSON.parse(localStorage.getItem('chat_history') || '[]');
-
-        // Initialize Chat
-        function initChat() {
-            // Remove initial welcome message if history exists
-            if (chatHistory.length > 0) {
-                // Clear container
-                chatContainer.querySelectorAll('.message-wrapper').forEach(e => e.remove());
-                
-                chatHistory.forEach(msg => {
-                    createMessageElement(msg.role, msg.content, msg.usage, false); // false = no animation/re-render for history
-                });
-            }
-        }
-
-        // Configure Marked
-        marked.use({
-            breaks: true, // Convert newlines to breaks
-            gfm: true,    // GitHub Flavored Markdown
-        });
-
-        function saveMessage(role, content, usage = null) {
-            chatHistory.push({ role, content, usage });
-            localStorage.setItem('chat_history', JSON.stringify(chatHistory));
-        }
-
-        function clearChat() {
-            if (confirm('Are you sure you want to clear the chat history?')) {
-                localStorage.removeItem('chat_history');
-                chatHistory = [];
-                location.reload();
-            }
-        }
-
-        clearBtn.addEventListener('click', clearChat);
-
-        function showError(message) {
-            errorToast.textContent = message;
-            errorToast.style.display = 'block';
-            setTimeout(() => {
-                errorToast.style.display = 'none';
-            }, 3000);
-        }
-
-        function formatTokenUsage(usage) {
-            if (!usage) return '';
-            return `In: ${usage.input_tokens || 0} | Out: ${usage.output_tokens || 0}`;
-        }
-
-        function createMessageElement(role, initialContent = '', usage = null, animate = true) {
-            const wrapper = document.createElement('div');
-            wrapper.className = `message-wrapper ${role}`;
-            
-            const msgContent = document.createElement('div');
-            msgContent.className = 'message-content';
-            
-            // If it's a history load (animate=false) or user message, render immediately
-            if (!animate || role === 'user') {
-                if (role === 'user') {
-                    msgContent.textContent = initialContent;
-                } else {
-                    msgContent.innerHTML = marked.parse(initialContent);
-                }
-            } else {
-                // Prepare for streaming (AI new message)
-                msgContent.innerHTML = marked.parse(initialContent); 
-            }
-            
-            wrapper.appendChild(msgContent);
-
-            const meta = document.createElement('div');
-            meta.className = 'meta-info';
-            if (usage || role === 'user') {
-                 meta.textContent = usage ? formatTokenUsage(usage) : (role === 'ai' ? 'AI Assistant' : 'You');
-            } else {
-                meta.textContent = 'AI Assistant';
-            }
-            wrapper.appendChild(meta);
-
-            chatContainer.appendChild(wrapper);
-            chatContainer.scrollTop = chatContainer.scrollHeight;
-
-            if (role === 'ai' && initialContent) {
-                applyHighlighting(msgContent);
-            }
-
-            return { wrapper, msgContent, meta };
-        }
-        
-        function applyHighlighting(element) {
-            element.querySelectorAll('pre code').forEach((block) => {
-                hljs.highlightElement(block);
-                addCopyButton(block.parentElement);
-            });
-        }
-
-        function addCopyButton(preElement) {
-            if (preElement.querySelector('.copy-btn')) return;
-            
-            const btn = document.createElement('button');
-            btn.className = 'copy-btn';
-            btn.textContent = 'Copy';
-            btn.type = 'button'; // Prevent form submit
-            
-            btn.addEventListener('click', () => {
-                const code = preElement.querySelector('code').innerText;
-                navigator.clipboard.writeText(code).then(() => {
-                    btn.textContent = 'Copied!';
-                    setTimeout(() => btn.textContent = 'Copy', 2000);
-                });
-            });
-            
-            preElement.appendChild(btn);
-        }
-
-        async function typeWriterEffect(element, text, speed = 15) {
-            element.innerHTML = ''; // Clear for typing
-            // We use a temporary buffer to render markdown progressively if possible, 
-            // but standard markdown parsers expect full text. 
-            // Better approach for smooth typing + markdown:
-            // 1. Type raw text invisibly or hold state.
-            // 2. Render full markdown at the end? No, that jumps.
-            // 3. Simple approach: Reveal chunks.
-            
-            // For stability with Markdown, we will simulate typing by just updating the text 
-            // and re-rendering markdown every N characters. It might be expensive but works for short texts.
-            // OR: We just stream the text content, then render Markdown at the end.
-            // "Real" streaming renders markdown incrementally. 
-            // A simple "Resume" trick: Type characters, re-render markdown every few chars.
-            
-            let i = 0;
-            const step = 2; // chars per tick
-            
-            return new Promise(resolve => {
-                function type() {
-                    if (i < text.length) {
-                        i += step;
-                        const currentText = text.substring(0, i);
-                        element.innerHTML = marked.parse(currentText);
-                        
-                        // Scroll to bottom
-                        chatContainer.scrollTop = chatContainer.scrollHeight;
-                        
-                        setTimeout(type, speed);
-                    } else {
-                        // Ensure final render is complete
-                        element.innerHTML = marked.parse(text);
-                        applyHighlighting(element);
-                        chatContainer.scrollTop = chatContainer.scrollHeight;
-                        resolve();
-                    }
-                }
-                type();
-            });
-        }
-
-        function showLoading() {
-            const wrapper = document.createElement('div');
-            wrapper.className = 'message-wrapper ai loading-indicator';
-            wrapper.innerHTML = `
-                <div class="typing-indicator">
-                    <div class="dot"></div>
-                    <div class="dot"></div>
-                    <div class="dot"></div>
-                </div>
-            `;
-            chatContainer.appendChild(wrapper);
-            chatContainer.scrollTop = chatContainer.scrollHeight;
-            return wrapper;
-        }
-
-        chatForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const message = userInput.value.trim();
-            if (!message) return;
-            
-            // Rest height
-            userInput.style.height = '3.5rem';
-
-            // Disable input
-            userInput.value = '';
-            userInput.disabled = true;
-            sendBtn.disabled = true;
-
-            // Add user message
-            createMessageElement('user', message);
-            saveMessage('user', message);
-
-            // Show loading
-            const loadingEl = showLoading();
-
-            try {
-                const response = await fetch('/chat', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ message: message })
-                });
-
-                const data = await response.json();
-
-                // Remove loading
-                loadingEl.remove();
-
-                if (!response.ok) {
-                    throw new Error(data.detail || 'Failed to get response');
-                }
-
-                // Add AI response structure (empty initially)
-                const { msgContent, meta } = createMessageElement('ai', '');
-                
-                // Simulate typing effect
-                await typeWriterEffect(msgContent, data.content);
-                
-                // Update metadata with token usage
-                meta.textContent = formatTokenUsage(data.token_usage);
-
-                // Save AI message
-                saveMessage('ai', data.content, data.token_usage);
-
-            } catch (error) {
-                loadingEl.remove();
-                showError(error.message);
-                console.error('Error:', error);
-            } finally {
-                userInput.disabled = false;
-                sendBtn.disabled = false;
-                userInput.focus();
-                // Ensure focus doesn't lose resize listener functionality
-            }
-        });
-
-        // Auto-Resize Textarea & Enter to Send
-        userInput.addEventListener('input', function() {
-            this.style.height = 'auto';
-            this.style.height = (this.scrollHeight) + 'px';
-            if (this.value === '') {
-                this.style.height = '3.5rem';
-            }
-        });
-
-        userInput.addEventListener('keydown', function(e) {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault(); // Prevent newline
-                chatForm.dispatchEvent(new Event('submit'));
-            }
-        });
-
-        // Start
-        initChat();
-    </script>
-</body>
+    <script src="script.js"></script>
+  </body>
 </html>

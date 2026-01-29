@@ -7,7 +7,7 @@ from datetime import date, datetime, timedelta, timezone
 
 from fastapi import BackgroundTasks, Depends, FastAPI, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -60,9 +60,13 @@ app = FastAPI(
     description="Enterprise-grade LLM gateway with input validation and request logging",
     version="1.0.0",
     lifespan=lifespan,
-    docs_url="/docs",
+    docs_url=None, # Disable default Swagger UI
     redoc_url="/redoc",
 )
+
+@app.get("/docs", include_in_schema=False)
+async def custom_swagger_ui_html():
+    return FileResponse("static/docs.html")
 
 # Add CORS middleware
 app.add_middleware(
@@ -266,7 +270,7 @@ async def chat_stream(
 )
 async def get_metrics(session: AsyncSession = Depends(get_session)):
     """Get API usage metrics for today."""
-    today_start = datetime.combine(date.today(), datetime.min.time(), tzinfo=timezone.utc)
+    today_start = datetime.combine(date.today(), datetime.min.time())
 
     query = select(
         func.count(RequestLog.id).label("total_requests"),
@@ -299,7 +303,7 @@ async def get_analytics(
     session: AsyncSession = Depends(get_session),
 ):
     """Get detailed analytics for the API."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now()
     time_24h_ago = now - timedelta(hours=24)
     time_7d_ago = now - timedelta(days=7)
 
@@ -356,6 +360,26 @@ async def get_analytics(
         select(func.count(GuardrailLog.id)).where(GuardrailLog.timestamp >= time_24h_ago)
     )).scalar() or 0
 
+    # Total blocked 7d
+    blocked_7d = (await session.execute(
+        select(func.count(GuardrailLog.id)).where(GuardrailLog.timestamp >= time_7d_ago)
+    )).scalar() or 0
+
+    # Success/Error counts for success rate chart
+    success_count = (await session.execute(
+        select(func.count(RequestLog.id)).where(
+            RequestLog.timestamp >= time_24h_ago,
+            RequestLog.status == "success"
+        )
+    )).scalar() or 0
+
+    error_count = (await session.execute(
+        select(func.count(RequestLog.id)).where(
+            RequestLog.timestamp >= time_24h_ago,
+            RequestLog.status != "success"
+        )
+    )).scalar() or 0
+
     analytics_data = AnalyticsResponse(
         total_requests_24h=row_24h.total_requests,
         total_requests_7d=row_7d.total_requests,
@@ -366,6 +390,9 @@ async def get_analytics(
         total_tokens_out_7d=row_7d.total_tokens_out,
         top_blocked_keywords=top_blocked_keywords,
         total_blocked_requests_24h=blocked_24h,
+        success_count_24h=success_count,
+        error_count_24h=error_count,
+        total_blocked_requests_7d=blocked_7d,
     )
 
     if format and format.lower() == "html":
@@ -399,11 +426,13 @@ def _generate_analytics_html(data: AnalyticsResponse) -> HTMLResponse:
         .stat-card {{ background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 1.5rem; }}
         .stat-value {{ font-size: 2rem; font-weight: 700; color: #6366f1; }}
         .stat-label {{ color: #a1a1aa; font-size: 0.875rem; margin-top: 0.25rem; }}
-        .charts-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 1.5rem; }}
+        .charts-grid {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem; }}
         .chart-card {{ background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 1.5rem; }}
         .chart-title {{ font-size: 1.125rem; margin-bottom: 1rem; }}
         canvas {{ max-height: 300px; }}
         .back-link {{ display: inline-block; margin-bottom: 1rem; color: #6366f1; text-decoration: none; }}
+        @media (max-width: 1200px) {{ .charts-grid {{ grid-template-columns: repeat(2, 1fr); }} }}
+        @media (max-width: 800px) {{ .charts-grid {{ grid-template-columns: 1fr; }} }}
     </style>
 </head>
 <body>
@@ -422,15 +451,20 @@ def _generate_analytics_html(data: AnalyticsResponse) -> HTMLResponse:
             <div class="chart-card"><h3 class="chart-title">Token Usage</h3><canvas id="tokenChart"></canvas></div>
             <div class="chart-card"><h3 class="chart-title">Blocked Keywords</h3><canvas id="blockedChart"></canvas></div>
             <div class="chart-card"><h3 class="chart-title">Request Volume</h3><canvas id="volumeChart"></canvas></div>
+            <div class="chart-card"><h3 class="chart-title">Success Rate (24h)</h3><canvas id="successChart"></canvas></div>
+            <div class="chart-card"><h3 class="chart-title">Security Overview</h3><canvas id="securityChart"></canvas></div>
         </div>
     </div>
     <script>
-        const colors = {{ primary: 'rgb(99,102,241)', secondary: 'rgb(139,92,246)', success: 'rgb(34,197,94)', danger: 'rgb(239,68,68)', grid: 'rgba(255,255,255,0.1)' }};
+        const colors = {{ primary: 'rgb(99,102,241)', secondary: 'rgb(139,92,246)', success: 'rgb(34,197,94)', danger: 'rgb(239,68,68)', warning: 'rgb(234,179,8)', grid: 'rgba(255,255,255,0.1)' }};
         const opts = {{ responsive: true, plugins: {{ legend: {{ labels: {{ color: '#e4e4e7' }} }} }}, scales: {{ x: {{ ticks: {{ color: '#a1a1aa' }}, grid: {{ color: colors.grid }} }}, y: {{ ticks: {{ color: '#a1a1aa' }}, grid: {{ color: colors.grid }} }} }} }};
+        const pieOpts = {{ responsive: true, plugins: {{ legend: {{ position: 'bottom', labels: {{ color: '#e4e4e7' }} }} }} }};
         new Chart(document.getElementById('latencyChart'), {{ type: 'line', data: {{ labels: {latency_labels}, datasets: [{{ label: 'Latency (ms)', data: {latency_values}, borderColor: colors.primary, fill: true, tension: 0.4 }}] }}, options: opts }});
         new Chart(document.getElementById('tokenChart'), {{ type: 'bar', data: {{ labels: ['24h', '7d'], datasets: [{{ label: 'Input', data: [{data.total_tokens_in_24h}, {data.total_tokens_in_7d}], backgroundColor: colors.primary }}, {{ label: 'Output', data: [{data.total_tokens_out_24h}, {data.total_tokens_out_7d}], backgroundColor: colors.secondary }}] }}, options: opts }});
         new Chart(document.getElementById('blockedChart'), {{ type: 'bar', data: {{ labels: {keyword_labels if keyword_labels else ['None']}, datasets: [{{ label: 'Count', data: {keyword_counts if keyword_counts else [0]}, backgroundColor: colors.danger }}] }}, options: {{ ...opts, indexAxis: 'y' }} }});
         new Chart(document.getElementById('volumeChart'), {{ type: 'bar', data: {{ labels: {latency_labels}, datasets: [{{ label: 'Requests', data: {latency_counts}, backgroundColor: colors.success }}] }}, options: opts }});
+        new Chart(document.getElementById('successChart'), {{ type: 'doughnut', data: {{ labels: ['Success', 'Errors'], datasets: [{{ data: [{data.success_count_24h}, {data.error_count_24h}], backgroundColor: [colors.success, colors.danger] }}] }}, options: pieOpts }});
+        new Chart(document.getElementById('securityChart'), {{ type: 'bar', data: {{ labels: ['24h', '7d'], datasets: [{{ label: 'Blocked Requests', data: [{data.total_blocked_requests_24h}, {data.total_blocked_requests_7d}], backgroundColor: [colors.warning, colors.danger] }}] }}, options: opts }});
     </script>
 </body>
 </html>"""

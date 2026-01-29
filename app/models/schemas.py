@@ -110,3 +110,16 @@ class AnalyticsResponse(BaseModel):
     total_blocked_requests_24h: int = Field(
         ..., description="Total blocked requests in the last 24 hours"
     )
+
+    # Success rate stats
+    success_count_24h: int = Field(
+        default=0, description="Successful requests in the last 24 hours"
+    )
+    error_count_24h: int = Field(
+        default=0, description="Failed requests in the last 24 hours"
+    )
+
+    # Extended security stats
+    total_blocked_requests_7d: int = Field(
+        default=0, description="Total blocked requests in the last 7 days"
+    )

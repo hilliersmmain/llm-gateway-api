@@ -7,69 +7,41 @@
 [![Gemini](https://img.shields.io/badge/Gemini-2.5%20Flash-8E75B2?style=for-the-badge&logo=google&logoColor=white)](https://ai.google.dev/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](./LICENSE)
 
-**LLM Gateway API** is an enterprise-grade LLM gateway that proxies requests to Google's Gemini 2.5 Flash model with built-in input validation, structured output enforcement, and comprehensive request logging. Designed for production scenarios where security, observability, and reliability are paramount.
+An enterprise-grade LLM gateway that proxies requests to Google's Gemini 2.5 Flash model with built-in input validation, structured output enforcement, and comprehensive request logging. Built for production scenarios where security, observability, and reliability actually matter.
 
 ---
 
-### Why I Built This
+## Why I Built This
 
 As organizations increasingly integrate LLMs into their workflows, the gap between "making an API call" and "deploying a production-ready AI service" becomes starkly apparent. I built **LLM Gateway API** to bridge that gap—demonstrating that responsible AI deployment requires more than just connecting to an API endpoint. It requires input validation to prevent prompt injection, observability to understand usage patterns, and enterprise-grade infrastructure to ensure reliability. This project showcases how to build an LLM gateway that's ready for real-world deployment.
 
 ---
 
-## API Reference
+## Screenshots
 
-| Endpoint       | Method | Description                                        |
-| -------------- | ------ | -------------------------------------------------- |
-| `/chat`        | POST   | Send a message through guardrails to Gemini        |
-| `/chat/stream` | POST   | Stream response via Server-Sent Events (SSE)       |
-| `/metrics`     | GET    | Get usage statistics and estimated cost            |
-| `/analytics`   | GET    | Get detailed analytics with trends and charts      |
-| `/health`      | GET    | Health check endpoint                              |
-| `/docs`        | GET    | Interactive Swagger UI documentation               |
-| `/redoc`       | GET    | ReDoc API documentation                            |
+Here's what the application looks like in action:
 
-### Analytics Endpoint
+### Chat Interface
 
-The `/analytics` endpoint provides detailed historical metrics and trends:
+![Chat Interface](screenshots/llm-gateway-api-screenshot-showing-chat-intro-contents.png)
 
-```bash
-curl http://localhost:8000/analytics
-```
+The main chat interface features a clean, dark-mode UI with session management and easy access to API docs and analytics.
 
-```json
-{
-  "total_requests_24h": 150,
-  "total_requests_7d": 890,
-  "latency_trend": [
-    {"hour": "2026-01-20T10:00:00", "avg_latency_ms": 245.5, "request_count": 12},
-    {"hour": "2026-01-20T11:00:00", "avg_latency_ms": 198.3, "request_count": 18}
-  ],
-  "total_tokens_in_24h": 12500,
-  "total_tokens_out_24h": 45000,
-  "total_tokens_in_7d": 85000,
-  "total_tokens_out_7d": 312000,
-  "top_blocked_keywords": [
-    {"keyword": "secret_key", "count": 23},
-    {"keyword": "internal_only", "count": 8}
-  ],
-  "total_blocked_requests_24h": 15
-}
-```
+![Working Chat](screenshots/llm-gateway-api-screenshot-showing-working-chat.png)
 
-**Analytics Dashboard (HTML)**
+Real-time chat responses from Gemini 2.5 Flash with markdown support and message history.
 
-For an interactive chart visualization, add `?format=html`:
+### Analytics Dashboard
 
-```bash
-open http://localhost:8000/analytics?format=html
-```
+![Analytics Dashboard](screenshots/llm-gateway-api-analytics-dashboard.png)
 
-The HTML dashboard includes:
-- **Latency Trend:** Line chart showing hourly average response times
-- **Token Usage:** Bar chart comparing input vs output tokens
-- **Blocked Keywords:** Horizontal bar chart of most commonly blocked terms
-- **Request Volume:** Bar chart of hourly request counts
+Interactive analytics dashboard showing latency trends, token usage, request volume, success rates, and security metrics.
+
+### API Documentation
+
+![API Documentation](screenshots/llm-gateway-api-screenshot-showing-stoplight-documentation-page.png)
+
+Comprehensive API documentation with interactive testing capabilities powered by Stoplight Elements.
 
 ---
 
@@ -93,8 +65,209 @@ docker-compose up -d --build
 curl http://localhost:8000/health
 ```
 
+The application will be available at `http://localhost:8000` with the full chat UI, API endpoints, and documentation.
+
+---
+
+## Key Features
+
+**Security & Validation:**
+
+- Input validation and guardrails to prevent prompt injection attacks
+- Keyword-based content filtering with configurable blocklists
+- Rate limiting (configurable per-user or global)
+- IP tracking for security monitoring
+
+**Observability:**
+
+- Comprehensive request logging with PostgreSQL persistence
+- Real-time metrics and analytics endpoints
+- Interactive analytics dashboard with Chart.js visualizations
+- Token usage tracking and cost estimation
+- Success rate monitoring and error tracking
+
+**Chat Interface:**
+
+- Modern, responsive web UI with dark mode
+- Multi-session chat history with localStorage persistence
+- Markdown rendering for bot responses
+- Real-time streaming responses via Server-Sent Events (SSE)
+
+**Developer Experience:**
+
+- Interactive API documentation with Stoplight Elements
+- OpenAPI 3.0 spec generation
+- Docker Compose for one-command deployment
+- Comprehensive test suite with pytest
+
+---
+
+## API Endpoints
+
+**Chat Endpoints:**
+
+- `POST /chat` - Send a message through guardrails to Gemini
+- `POST /chat/stream` - Stream response via Server-Sent Events (SSE)
+
+**Monitoring & Metrics:**
+
+- `GET /metrics` - Get usage statistics and estimated cost
+- `GET /analytics` - Get detailed analytics with trends and charts
+- `GET /analytics?format=html` - Interactive analytics dashboard
+- `GET /health` - Health check endpoint
+
+**Documentation:**
+
+- `GET /docs` - Interactive Stoplight API documentation
+- `GET /redoc` - ReDoc API documentation
+
+---
+
+## Analytics Dashboard
+
+The `/analytics` endpoint provides detailed historical metrics and trends. Access the JSON response directly, or use `?format=html` for an interactive dashboard with:
+
+- **Latency Trend:** Line chart showing hourly average response times
+- **Token Usage:** Bar chart comparing input vs output tokens over 24h and 7d
+- **Blocked Keywords:** Horizontal bar chart of most commonly blocked terms
+- **Request Volume:** Bar chart of hourly request counts
+- **Success Rate:** Pie chart showing successful vs failed requests
+- **Security Overview:** Bar chart of blocked requests over time
+
+Example analytics JSON response:
+
+```json
+{
+  "total_requests_24h": 150,
+  "total_requests_7d": 890,
+  "latency_trend": [
+    {
+      "hour": "2026-01-20T10:00:00",
+      "avg_latency_ms": 245.5,
+      "request_count": 12
+    },
+    {
+      "hour": "2026-01-20T11:00:00",
+      "avg_latency_ms": 198.3,
+      "request_count": 18
+    }
+  ],
+  "total_tokens_in_24h": 12500,
+  "total_tokens_out_24h": 45000,
+  "top_blocked_keywords": [
+    { "keyword": "secret_key", "count": 23 },
+    { "keyword": "internal_only", "count": 8 }
+  ],
+  "total_blocked_requests_24h": 15,
+  "success_count_24h": 135,
+  "error_count_24h": 0
+}
+```
+
+---
+
+## Project Structure
+
+The codebase is organized for clarity and maintainability:
+
+```
+llm-gateway-api/
+├── app/
+│   ├── core/              # Configuration and database setup
+│   ├── middleware/        # Rate limiting and request logging
+│   ├── models/            # SQLAlchemy models and Pydantic schemas
+│   ├── services/          # Business logic (Gemini, Guardrails)
+│   └── main.py            # FastAPI application entry point
+├── static/                # Frontend files (HTML, CSS, JS)
+├── screenshots/           # Application screenshots
+├── tests/                 # Pytest test suite
+├── docker-compose.yml     # Docker orchestration
+├── Dockerfile             # Container configuration
+└── requirements.txt       # Python dependencies
+```
+
+---
+
+## Running Tests
+
+The project includes a comprehensive test suite:
+
+```bash
+# Install test dependencies
+pip install -r requirements.txt
+
+# Run all tests
+pytest
+
+# Run with coverage
+pytest --cov=app
+```
+
+Tests cover:
+
+- Guardrail validation logic
+- Chat endpoint functionality
+- Streaming responses
+- Analytics calculations
+- Database operations
+- Error handling
+
+---
+
+## Configuration
+
+Environment variables are configured via `.env` file:
+
+- `GEMINI_API_KEY` - Your Google Gemini API key (required)
+- `DATABASE_URL` - PostgreSQL connection string (auto-configured in Docker)
+- `POSTGRES_PASSWORD` - Database password (change for production!)
+- `LOG_LEVEL` - Logging level (DEBUG, INFO, WARNING, ERROR)
+- `RATE_LIMIT_REQUESTS` - Max requests per window (default: 10)
+- `RATE_LIMIT_WINDOW_SECONDS` - Rate limit window in seconds (default: 60)
+- `REDIS_URL` - Redis URL for distributed rate limiting (optional)
+
+---
+
+## Deployment Considerations
+
+This project is designed to be production-ready with minimal configuration:
+
+1. **Change the default database password** in `.env` before deploying
+2. **Configure rate limiting** based on your expected traffic
+3. **Set up Redis** if you need distributed rate limiting across multiple instances
+4. **Review guardrails configuration** in `app/services/guardrails.py` to match your security requirements
+5. **Monitor the `/analytics` endpoint** for usage patterns and potential security issues
+
+The application is containerized and can be deployed to any Docker-compatible platform (AWS ECS, Google Cloud Run, Azure Container Instances, etc.).
+
+---
+
+## Technology Stack
+
+- **FastAPI** - Modern, high-performance Python web framework
+- **PostgreSQL 17** - Robust relational database for request logging
+- **Docker Compose** - Multi-container orchestration
+- **Google Gemini 2.5 Flash** - State-of-the-art LLM with fast inference
+- **SQLAlchemy** - Async ORM for database operations
+- **Pydantic** - Data validation and settings management
+- **Chart.js** - Interactive analytics visualizations
+- **Marked.js** - Markdown rendering in the chat UI
+- **Stoplight Elements** - Beautiful API documentation
+
+---
+
+## Contributing
+
+This is a personal portfolio project, but I'm open to feedback and suggestions! Feel free to open an issue or submit a pull request if you find bugs or have ideas for improvements.
+
 ---
 
 ## License
 
-MIT License
+MIT License - see [LICENSE](./LICENSE) for details.
+
+---
+
+## Acknowledgments
+
+Built as a demonstration of production-ready LLM integration patterns, inspired by real-world challenges in deploying AI systems at scale.

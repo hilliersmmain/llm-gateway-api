@@ -155,26 +155,29 @@ docker-compose logs -f
 
 ### Troubleshooting
 
+**docker-compose command not found (Linux):**
+
+```bash
+sudo apt install docker-compose
+```
+
 **Port 8000 already in use:**
 
 ```bash
-# Find what's using port 8000
-lsof -i :8000
-# Stop it or change the port in docker-compose.yml
+lsof -i :8000  # Find what's using the port
 ```
 
 **Docker permission errors (Linux):**
 
 ```bash
-sudo usermod -aG docker $USER
-# Log out and back in for changes to take effect
+sudo usermod -aG docker $USER  # Log out and back in after
 ```
 
 **Invalid API key errors:**
 
-- Double-check that you copied the full key from Google AI Studio
-- Make sure there are no extra spaces in your `.env` file
-- Verify the line reads: `GEMINI_API_KEY=AIzaYourKeyHere` (no quotes needed)
+- Double-check you copied the full key from Google AI Studio
+- Ensure no extra spaces in `.env`
+- Format: `GEMINI_API_KEY=AIzaYourKeyHere` (no quotes)
 
 ---
 
@@ -282,149 +285,52 @@ curl -N -X POST http://localhost:8000/chat/stream \
 
 ## Analytics Dashboard
 
-The `/analytics` endpoint provides detailed historical metrics and trends. Access the JSON response directly, or use `?format=html` for an interactive dashboard with:
-
-- **Latency Trend:** Line chart showing hourly average response times
-- **Token Usage:** Bar chart comparing input vs output tokens over 24h and 7d
-- **Blocked Keywords:** Horizontal bar chart of most commonly blocked terms
-- **Request Volume:** Bar chart of hourly request counts
-- **Success Rate:** Pie chart showing successful vs failed requests
-- **Security Overview:** Bar chart of blocked requests over time
-
-Example analytics JSON response:
-
-```json
-{
-  "total_requests_24h": 150,
-  "total_requests_7d": 890,
-  "latency_trend": [
-    {
-      "hour": "2026-01-20T10:00:00",
-      "avg_latency_ms": 245.5,
-      "request_count": 12
-    },
-    {
-      "hour": "2026-01-20T11:00:00",
-      "avg_latency_ms": 198.3,
-      "request_count": 18
-    }
-  ],
-  "total_tokens_in_24h": 12500,
-  "total_tokens_out_24h": 45000,
-  "top_blocked_keywords": [
-    { "keyword": "secret_key", "count": 23 },
-    { "keyword": "internal_only", "count": 8 }
-  ],
-  "total_blocked_requests_24h": 15,
-  "success_count_24h": 135,
-  "error_count_24h": 0
-}
-```
+The `/analytics` endpoint provides detailed metrics and trends. Use `?format=html` for an interactive dashboard with charts for latency trends, token usage, blocked keywords, request volume, success rates, and security overview.
 
 ---
-
-## Project Structure
-
-The codebase is organized for clarity and maintainability:
-
-```
-llm-gateway-api/
-├── app/
-│   ├── core/              # Configuration and database setup
-│   ├── middleware/        # Rate limiting and request logging
-│   ├── models/            # SQLAlchemy models and Pydantic schemas
-│   ├── services/          # Business logic (Gemini, Guardrails)
-│   └── main.py            # FastAPI application entry point
-├── static/                # Frontend files (HTML, CSS, JS)
-├── screenshots/           # Application screenshots
-├── tests/                 # Pytest test suite
-├── docker-compose.yml     # Docker orchestration
-├── Dockerfile             # Container configuration
-└── requirements.txt       # Python dependencies
-```
 
 ---
 
 ## Running Tests
 
-The project includes a comprehensive test suite:
-
 ```bash
-# Install test dependencies
 pip install -r requirements.txt
-
-# Run all tests
-pytest
-
-# Run with coverage
 pytest --cov=app
 ```
-
-Tests cover:
-
-- Guardrail validation logic
-- Chat endpoint functionality
-- Streaming responses
-- Analytics calculations
-- Database operations
-- Error handling
 
 ---
 
 ## Configuration
 
-Environment variables are configured via `.env` file:
+Key environment variables in `.env`:
 
-- `GEMINI_API_KEY` - Your Google Gemini API key (required)
-- `DATABASE_URL` - PostgreSQL connection string (auto-configured in Docker)
+- `GEMINI_API_KEY` - Your API key (required)
 - `POSTGRES_PASSWORD` - Database password (change for production!)
-- `LOG_LEVEL` - Logging level (DEBUG, INFO, WARNING, ERROR)
-- `RATE_LIMIT_REQUESTS` - Max requests per window (default: 10)
-- `RATE_LIMIT_WINDOW_SECONDS` - Rate limit window in seconds (default: 60)
-- `REDIS_URL` - Redis URL for distributed rate limiting (optional)
+- `RATE_LIMIT_REQUESTS` / `RATE_LIMIT_WINDOW_SECONDS` - Rate limiting settings
+- `LOG_LEVEL` - Logging verbosity
+- `REDIS_URL` - Optional for distributed rate limiting
 
 ---
 
-## Deployment Considerations
+## Deployment
 
-This project is designed to be production-ready with minimal configuration:
+Before deploying to production:
 
-1. **Change the default database password** in `.env` before deploying
-2. **Configure rate limiting** based on your expected traffic
-3. **Set up Redis** if you need distributed rate limiting across multiple instances
-4. **Review guardrails configuration** in `app/services/guardrails.py` to match your security requirements
-5. **Monitor the `/analytics` endpoint** for usage patterns and potential security issues
+1. Change the database password in `.env`
+2. Configure rate limiting for your traffic
+3. Review guardrails in `app/services/guardrails.py`
+4. Set up Redis for distributed rate limiting (optional)
 
-The application is containerized and can be deployed to any Docker-compatible platform (AWS ECS, Google Cloud Run, Azure Container Instances, etc.).
+Deploy to any Docker-compatible platform: AWS ECS, Google Cloud Run, Azure Container Instances, etc.
 
 ---
 
 ## Technology Stack
 
-- **FastAPI** - Modern, high-performance Python web framework
-- **PostgreSQL 17** - Robust relational database for request logging
-- **Docker Compose** - Multi-container orchestration
-- **Google Gemini 2.5 Flash** - State-of-the-art LLM with fast inference
-- **SQLAlchemy** - Async ORM for database operations
-- **Pydantic** - Data validation and settings management
-- **Chart.js** - Interactive analytics visualizations
-- **Marked.js** - Markdown rendering in the chat UI
-- **Stoplight Elements** - Beautiful API documentation
-
----
-
-## Contributing
-
-This is a personal portfolio project, but I'm open to feedback and suggestions! Feel free to open an issue or submit a pull request if you find bugs or have ideas for improvements.
+FastAPI • PostgreSQL 17 • Docker • Gemini 2.5 Flash • SQLAlchemy • Chart.js • Stoplight Elements
 
 ---
 
 ## License
 
 MIT License - see [LICENSE](./LICENSE) for details.
-
----
-
-## Acknowledgments
-
-Built as a demonstration of production-ready LLM integration patterns, inspired by real-world challenges in deploying AI systems at scale.

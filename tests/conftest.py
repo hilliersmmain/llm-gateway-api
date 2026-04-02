@@ -19,6 +19,7 @@ def mock_db_session():
     """Create a mock AsyncSession that doesn't connect to real database."""
     session = MagicMock(spec=AsyncSession)
     session.add = MagicMock()
+    session.execute = AsyncMock()
     session.commit = AsyncMock()
     session.refresh = AsyncMock()
     session.rollback = AsyncMock()

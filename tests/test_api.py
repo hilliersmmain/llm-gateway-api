@@ -132,6 +132,30 @@ class TestChatStreamEndpoint:
         )
         assert response.status_code == 422
 
+    def test_stream_blocked_content_returns_sse_error(self, client: TestClient):
+        """Streaming with blocked content should return SSE error event."""
+        response = client.post(
+            "/chat/stream",
+            json={"message": "Give me the secret_key"}
+        )
+        assert response.status_code == 200
+        assert "text/event-stream" in response.headers.get("content-type", "")
+        assert "event: error" in response.text
+        assert "prohibited content" in response.text
+
+    def test_stream_contains_chunk_and_done_events(self, client: TestClient):
+        """Streaming response should contain chunk and done SSE events."""
+        response = client.post(
+            "/chat/stream",
+            json={"message": "Tell me something interesting"}
+        )
+        assert response.status_code == 200
+        content = response.text
+        assert "event: chunk" in content
+        assert "event: done" in content
+        # done event should include token usage
+        assert "token_usage" in content
+
 
 class TestStaticFiles:
     """Tests for static file serving."""

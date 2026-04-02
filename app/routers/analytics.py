@@ -1,0 +1,230 @@
+"""Analytics and metrics router."""
+
+from datetime import date, datetime, timedelta
+
+from fastapi import APIRouter, Depends, Query
+from fastapi.responses import HTMLResponse
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.config import get_settings
+from app.core.database import get_session
+from app.models.log import GuardrailLog, RequestLog
+from app.models.schemas import (
+    AnalyticsResponse,
+    BlockedKeywordStat,
+    LatencyBucket,
+    MetricsResponse,
+)
+
+settings = get_settings()
+
+router = APIRouter(tags=["Analytics"])
+
+
+@router.get(
+    "/metrics",
+    response_model=MetricsResponse,
+    tags=["Metrics"],
+    summary="Get API usage metrics",
+)
+async def get_metrics(session: AsyncSession = Depends(get_session)):
+    """Get API usage metrics for today."""
+    today_start = datetime.combine(date.today(), datetime.min.time())
+
+    query = select(
+        func.count(RequestLog.id).label("total_requests"),
+        func.coalesce(func.sum(RequestLog.tokens_in), 0).label("total_tokens_in"),
+        func.coalesce(func.sum(RequestLog.tokens_out), 0).label("total_tokens_out"),
+    ).where(RequestLog.timestamp >= today_start)
+
+    result = await session.execute(query)
+    row = result.one()
+
+    input_cost = (row.total_tokens_in / 1_000_000) * settings.gemini_input_price_per_million
+    output_cost = (row.total_tokens_out / 1_000_000) * settings.gemini_output_price_per_million
+
+    return MetricsResponse(
+        total_requests_today=row.total_requests,
+        total_tokens_in=row.total_tokens_in,
+        total_tokens_out=row.total_tokens_out,
+        estimated_cost_usd=round(input_cost + output_cost, 6),
+    )
+
+
+@router.get(
+    "/analytics",
+    response_model=AnalyticsResponse,
+    summary="Get detailed analytics",
+)
+async def get_analytics(
+    format: str | None = Query(None, description="Response format: 'json' or 'html'"),
+    session: AsyncSession = Depends(get_session),
+):
+    """Get detailed analytics for the API."""
+    now = datetime.now()
+    time_24h_ago = now - timedelta(hours=24)
+    time_7d_ago = now - timedelta(days=7)
+
+    # 24h metrics
+    query_24h = select(
+        func.count(RequestLog.id).label("total_requests"),
+        func.coalesce(func.sum(RequestLog.tokens_in), 0).label("total_tokens_in"),
+        func.coalesce(func.sum(RequestLog.tokens_out), 0).label("total_tokens_out"),
+    ).where(RequestLog.timestamp >= time_24h_ago)
+    row_24h = (await session.execute(query_24h)).one()
+
+    # 7d metrics
+    query_7d = select(
+        func.count(RequestLog.id).label("total_requests"),
+        func.coalesce(func.sum(RequestLog.tokens_in), 0).label("total_tokens_in"),
+        func.coalesce(func.sum(RequestLog.tokens_out), 0).label("total_tokens_out"),
+    ).where(RequestLog.timestamp >= time_7d_ago)
+    row_7d = (await session.execute(query_7d)).one()
+
+    # Hourly latency buckets
+    latency_query = (
+        select(
+            func.date_trunc("hour", RequestLog.timestamp).label("hour"),
+            func.avg(RequestLog.latency_ms).label("avg_latency"),
+            func.count(RequestLog.id).label("request_count"),
+        )
+        .where(RequestLog.timestamp >= time_24h_ago)
+        .group_by("hour")
+        .order_by("hour")
+    )
+    latency_rows = (await session.execute(latency_query)).all()
+    latency_trend = [
+        LatencyBucket(
+            hour=row.hour.isoformat() if row.hour else "",
+            avg_latency_ms=round(float(row.avg_latency), 2) if row.avg_latency else 0.0,
+            request_count=row.request_count,
+        )
+        for row in latency_rows
+    ]
+
+    # Top blocked keywords
+    blocked_query = (
+        select(GuardrailLog.blocked_keyword, func.count(GuardrailLog.id).label("count"))
+        .where(GuardrailLog.blocked_keyword.isnot(None), GuardrailLog.timestamp >= time_7d_ago)
+        .group_by(GuardrailLog.blocked_keyword)
+        .order_by(func.count(GuardrailLog.id).desc())
+        .limit(10)
+    )
+    blocked_rows = (await session.execute(blocked_query)).all()
+    top_blocked_keywords = [BlockedKeywordStat(keyword=row.blocked_keyword, count=row.count) for row in blocked_rows]
+
+    # Total blocked 24h
+    blocked_24h = (await session.execute(
+        select(func.count(GuardrailLog.id)).where(GuardrailLog.timestamp >= time_24h_ago)
+    )).scalar() or 0
+
+    # Total blocked 7d
+    blocked_7d = (await session.execute(
+        select(func.count(GuardrailLog.id)).where(GuardrailLog.timestamp >= time_7d_ago)
+    )).scalar() or 0
+
+    # Success/Error counts for success rate chart
+    success_count = (await session.execute(
+        select(func.count(RequestLog.id)).where(
+            RequestLog.timestamp >= time_24h_ago,
+            RequestLog.status == "success"
+        )
+    )).scalar() or 0
+
+    error_count = (await session.execute(
+        select(func.count(RequestLog.id)).where(
+            RequestLog.timestamp >= time_24h_ago,
+            RequestLog.status != "success"
+        )
+    )).scalar() or 0
+
+    analytics_data = AnalyticsResponse(
+        total_requests_24h=row_24h.total_requests,
+        total_requests_7d=row_7d.total_requests,
+        latency_trend=latency_trend,
+        total_tokens_in_24h=row_24h.total_tokens_in,
+        total_tokens_out_24h=row_24h.total_tokens_out,
+        total_tokens_in_7d=row_7d.total_tokens_in,
+        total_tokens_out_7d=row_7d.total_tokens_out,
+        top_blocked_keywords=top_blocked_keywords,
+        total_blocked_requests_24h=blocked_24h,
+        success_count_24h=success_count,
+        error_count_24h=error_count,
+        total_blocked_requests_7d=blocked_7d,
+    )
+
+    if format and format.lower() == "html":
+        return _generate_analytics_html(analytics_data)
+
+    return analytics_data
+
+
+def _generate_analytics_html(data: AnalyticsResponse) -> HTMLResponse:
+    """Generate HTML page with Chart.js visualizations."""
+    latency_labels = [b.hour[-8:-3] for b in data.latency_trend]
+    latency_values = [b.avg_latency_ms for b in data.latency_trend]
+    latency_counts = [b.request_count for b in data.latency_trend]
+    keyword_labels = [s.keyword for s in data.top_blocked_keywords]
+    keyword_counts = [s.count for s in data.top_blocked_keywords]
+
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LLM Gateway Analytics</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+        body {{ font-family: system-ui, sans-serif; background: linear-gradient(135deg, #1a1a2e, #16213e); color: #e4e4e7; min-height: 100vh; padding: 2rem; }}
+        .container {{ max-width: 1400px; margin: 0 auto; }}
+        h1 {{ font-size: 2rem; margin-bottom: 0.5rem; background: linear-gradient(90deg, #6366f1, #8b5cf6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }}
+        .subtitle {{ color: #a1a1aa; margin-bottom: 2rem; }}
+        .stats-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem; }}
+        .stat-card {{ background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 1.5rem; }}
+        .stat-value {{ font-size: 2rem; font-weight: 700; color: #6366f1; }}
+        .stat-label {{ color: #a1a1aa; font-size: 0.875rem; margin-top: 0.25rem; }}
+        .charts-grid {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem; }}
+        .chart-card {{ background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 1.5rem; }}
+        .chart-title {{ font-size: 1.125rem; margin-bottom: 1rem; }}
+        canvas {{ max-height: 300px; }}
+        .back-link {{ display: inline-block; margin-bottom: 1rem; color: #6366f1; text-decoration: none; }}
+        @media (max-width: 1200px) {{ .charts-grid {{ grid-template-columns: repeat(2, 1fr); }} }}
+        @media (max-width: 800px) {{ .charts-grid {{ grid-template-columns: 1fr; }} }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="/" class="back-link">Back to Chat</a>
+        <h1>Analytics Dashboard</h1>
+        <p class="subtitle">LLM Gateway API Usage Statistics</p>
+        <div class="stats-grid">
+            <div class="stat-card"><div class="stat-value">{data.total_requests_24h:,}</div><div class="stat-label">Requests (24h)</div></div>
+            <div class="stat-card"><div class="stat-value">{data.total_requests_7d:,}</div><div class="stat-label">Requests (7d)</div></div>
+            <div class="stat-card"><div class="stat-value">{data.total_tokens_in_24h + data.total_tokens_out_24h:,}</div><div class="stat-label">Total Tokens (24h)</div></div>
+            <div class="stat-card"><div class="stat-value">{data.total_blocked_requests_24h:,}</div><div class="stat-label">Blocked (24h)</div></div>
+        </div>
+        <div class="charts-grid">
+            <div class="chart-card"><h3 class="chart-title">Latency Trend</h3><canvas id="latencyChart"></canvas></div>
+            <div class="chart-card"><h3 class="chart-title">Token Usage</h3><canvas id="tokenChart"></canvas></div>
+            <div class="chart-card"><h3 class="chart-title">Blocked Keywords</h3><canvas id="blockedChart"></canvas></div>
+            <div class="chart-card"><h3 class="chart-title">Request Volume</h3><canvas id="volumeChart"></canvas></div>
+            <div class="chart-card"><h3 class="chart-title">Success Rate (24h)</h3><canvas id="successChart"></canvas></div>
+            <div class="chart-card"><h3 class="chart-title">Security Overview</h3><canvas id="securityChart"></canvas></div>
+        </div>
+    </div>
+    <script>
+        const colors = {{ primary: 'rgb(99,102,241)', secondary: 'rgb(139,92,246)', success: 'rgb(34,197,94)', danger: 'rgb(239,68,68)', warning: 'rgb(234,179,8)', grid: 'rgba(255,255,255,0.1)' }};
+        const opts = {{ responsive: true, plugins: {{ legend: {{ labels: {{ color: '#e4e4e7' }} }} }}, scales: {{ x: {{ ticks: {{ color: '#a1a1aa' }}, grid: {{ color: colors.grid }} }}, y: {{ ticks: {{ color: '#a1a1aa' }}, grid: {{ color: colors.grid }} }} }} }};
+        const pieOpts = {{ responsive: true, plugins: {{ legend: {{ position: 'bottom', labels: {{ color: '#e4e4e7' }} }} }} }};
+        new Chart(document.getElementById('latencyChart'), {{ type: 'line', data: {{ labels: {latency_labels}, datasets: [{{ label: 'Latency (ms)', data: {latency_values}, borderColor: colors.primary, fill: true, tension: 0.4 }}] }}, options: opts }});
+        new Chart(document.getElementById('tokenChart'), {{ type: 'bar', data: {{ labels: ['24h', '7d'], datasets: [{{ label: 'Input', data: [{data.total_tokens_in_24h}, {data.total_tokens_in_7d}], backgroundColor: colors.primary }}, {{ label: 'Output', data: [{data.total_tokens_out_24h}, {data.total_tokens_out_7d}], backgroundColor: colors.secondary }}] }}, options: opts }});
+        new Chart(document.getElementById('blockedChart'), {{ type: 'bar', data: {{ labels: {keyword_labels if keyword_labels else ['None']}, datasets: [{{ label: 'Count', data: {keyword_counts if keyword_counts else [0]}, backgroundColor: colors.danger }}] }}, options: {{ ...opts, indexAxis: 'y' }} }});
+        new Chart(document.getElementById('volumeChart'), {{ type: 'bar', data: {{ labels: {latency_labels}, datasets: [{{ label: 'Requests', data: {latency_counts}, backgroundColor: colors.success }}] }}, options: opts }});
+        new Chart(document.getElementById('successChart'), {{ type: 'doughnut', data: {{ labels: ['Success', 'Errors'], datasets: [{{ data: [{data.success_count_24h}, {data.error_count_24h}], backgroundColor: [colors.success, colors.danger] }}] }}, options: pieOpts }});
+        new Chart(document.getElementById('securityChart'), {{ type: 'bar', data: {{ labels: ['24h', '7d'], datasets: [{{ label: 'Blocked Requests', data: [{data.total_blocked_requests_24h}, {data.total_blocked_requests_7d}], backgroundColor: [colors.warning, colors.danger] }}] }}, options: opts }});
+    </script>
+</body>
+</html>"""
+    return HTMLResponse(content=html)

@@ -258,7 +258,8 @@ curl -N -X POST http://localhost:8000/chat/stream \
 - Interactive API documentation with Stoplight Elements
 - OpenAPI 3.0 spec generation
 - Docker Compose for one-command deployment
-- Comprehensive test suite with pytest
+- 56-test suite with 89% coverage using pytest
+- Modular router-based architecture (`app/routers/`)
 
 ---
 
@@ -289,9 +290,9 @@ The `/analytics` endpoint provides detailed metrics and trends. Use `?format=htm
 
 ---
 
----
-
 ## Running Tests
+
+The test suite includes 56 tests with 89% code coverage, covering API endpoints, guardrails, rate limiting, streaming, and analytics.
 
 ```bash
 pip install -r requirements.txt

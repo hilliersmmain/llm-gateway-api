@@ -157,7 +157,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     """Middleware to enforce rate limiting per IP address."""
 
     # Paths excluded from rate limiting
-    EXCLUDED_PATHS = {"/health", "/metrics", "/docs", "/redoc", "/openapi.json"}
+    EXCLUDED_PATHS = frozenset({"/health", "/metrics", "/docs", "/redoc", "/openapi.json"})
 
     def __init__(
         self,
@@ -171,23 +171,12 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self.max_requests = max_requests
         self.window_seconds = window_seconds
 
-    def _get_client_ip(self, request: Request) -> str:
-        """Extract client IP, checking X-Forwarded-For for proxy setups.
+    @staticmethod
+    def _get_client_ip(request: Request) -> str:
+        """Extract client IP, checking X-Forwarded-For for proxy setups."""
+        from app.utils import get_client_ip
 
-        Uses the rightmost IP from X-Forwarded-For, which is the one appended
-        by the trusted reverse proxy (e.g., Heroku router). The leftmost value
-        is client-controlled and can be spoofed to bypass rate limiting.
-        """
-        forwarded_for = request.headers.get("X-Forwarded-For")
-        if forwarded_for:
-            # Rightmost IP is set by the trusted proxy (Heroku, nginx, etc.)
-            return forwarded_for.split(",")[-1].strip()
-
-        # Fall back to direct connection IP
-        if request.client:
-            return request.client.host
-
-        return "unknown"
+        return get_client_ip(request) or "unknown"
 
     async def dispatch(
         self, request: Request, call_next: RequestResponseEndpoint

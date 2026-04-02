@@ -110,6 +110,7 @@ _guardrails_service: GuardrailsService | None = None
 
 
 def get_guardrails_service() -> GuardrailsService:
+    """Get or create guardrails service instance."""
     global _guardrails_service
     if _guardrails_service is None:
         _guardrails_service = GuardrailsService()

@@ -233,50 +233,41 @@ class TestRateLimitMiddlewareIPExtraction:
         return app, store
 
     def test_uses_x_forwarded_for_header(self, test_app_with_store):
-        """Should use X-Forwarded-For header when present."""
+        """Should use rightmost IP from X-Forwarded-For (trusted proxy IP)."""
         app, store = test_app_with_store
         client = TestClient(app)
-        
+
         # Make request with X-Forwarded-For header
         response = client.get(
             "/test",
             headers={"X-Forwarded-For": "10.0.0.1, 10.0.0.2"}
         )
         assert response.status_code == 200
-        
-        # Check the store has the correct IP (first in chain)
-        assert "10.0.0.1" in store._requests
 
-    def test_uses_x_real_ip_header(self, test_app_with_store):
-        """Should use X-Real-IP header when present."""
+        # Rightmost IP is the one set by the trusted reverse proxy
+        assert "10.0.0.2" in store._requests
+
+    def test_falls_back_to_client_host(self, test_app_with_store):
+        """Should fall back to direct connection IP when no proxy headers."""
         app, store = test_app_with_store
         client = TestClient(app)
-        
-        # Make request with X-Real-IP header
-        response = client.get(
-            "/test",
-            headers={"X-Real-IP": "192.168.1.100"}
-        )
-        assert response.status_code == 200
-        
-        # Check the store has the correct IP
-        assert "192.168.1.100" in store._requests
 
-    def test_prefers_x_forwarded_for_over_x_real_ip(self, test_app_with_store):
-        """X-Forwarded-For should take precedence over X-Real-IP."""
+        # Make request with no proxy headers
+        response = client.get("/test")
+        assert response.status_code == 200
+
+        # Should use the direct connection IP
+        assert len(store._requests) == 1
+
+    def test_single_ip_in_forwarded_for(self, test_app_with_store):
+        """Should handle single IP in X-Forwarded-For correctly."""
         app, store = test_app_with_store
         client = TestClient(app)
-        
-        # Make request with both headers
+
         response = client.get(
             "/test",
-            headers={
-                "X-Forwarded-For": "10.0.0.1",
-                "X-Real-IP": "192.168.1.100"
-            }
+            headers={"X-Forwarded-For": "10.0.0.1"}
         )
         assert response.status_code == 200
-        
-        # Should use X-Forwarded-For
+
         assert "10.0.0.1" in store._requests
-        assert "192.168.1.100" not in store._requests

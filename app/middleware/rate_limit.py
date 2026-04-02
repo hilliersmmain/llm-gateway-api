@@ -172,22 +172,21 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self.window_seconds = window_seconds
 
     def _get_client_ip(self, request: Request) -> str:
-        """Extract client IP, checking X-Forwarded-For for proxy setups."""
-        # Check for proxy headers
+        """Extract client IP, checking X-Forwarded-For for proxy setups.
+
+        Uses the rightmost IP from X-Forwarded-For, which is the one appended
+        by the trusted reverse proxy (e.g., Heroku router). The leftmost value
+        is client-controlled and can be spoofed to bypass rate limiting.
+        """
         forwarded_for = request.headers.get("X-Forwarded-For")
         if forwarded_for:
-            # Take the first IP in the chain (original client)
-            return forwarded_for.split(",")[0].strip()
-        
-        # Check X-Real-IP header
-        real_ip = request.headers.get("X-Real-IP")
-        if real_ip:
-            return real_ip.strip()
-        
+            # Rightmost IP is set by the trusted proxy (Heroku, nginx, etc.)
+            return forwarded_for.split(",")[-1].strip()
+
         # Fall back to direct connection IP
         if request.client:
             return request.client.host
-        
+
         return "unknown"
 
     async def dispatch(

@@ -23,7 +23,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Check if we need to load a specific chat or create new
         // For now, simple logic: create new if none active
-        createNewChat(false); 
+        createNewChat(true);
         
         setupEventListeners();
         setupHistoryDelegation(); // Added delegation setup
@@ -33,19 +33,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Event Listeners ---
     function setupEventListeners() {
-        console.log('Setting up event listeners...');
-        
         // Single clean event listener for send button
         sendBtn.addEventListener('click', (e) => {
-            console.log('Send button clicked');
             e.preventDefault();
             sendMessage();
         });
-        
+
         userInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
-                console.log('Enter pressed in input');
                 sendMessage();
             }
         });
@@ -83,10 +79,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function sendMessage() {
         const text = userInput.value.trim();
-        console.log('Attempting to send message:', text);
-        
+
         if (!text) {
-            console.log('Empty text, aborting send');
             return;
         }
 
@@ -103,7 +97,6 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             showTypingIndicator();
             
-            console.log('Sending API request...');
             const response = await fetch('/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -113,7 +106,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!response.ok) throw new Error('API request failed');
 
             const data = await response.json();
-            console.log('API Response received:', data);
             
             const botMessage = data.content; // Updated from 'response' to 'content' based on ChatResponse schema in main.py
 

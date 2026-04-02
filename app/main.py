@@ -5,9 +5,10 @@ import logging
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
 
-from fastapi import BackgroundTasks, Depends, FastAPI, Query, Request
+from fastapi import BackgroundTasks, Depends, FastAPI, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse, FileResponse
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -68,13 +69,25 @@ app = FastAPI(
 async def custom_swagger_ui_html():
     return FileResponse("static/docs.html")
 
+# Security headers middleware
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "geolocation=(), camera=(), microphone=()"
+        return response
+
+app.add_middleware(SecurityHeadersMiddleware)
+
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type"],
 )
 
 # Add rate limiting middleware
@@ -111,13 +124,16 @@ async def health_check():
 
 
 def get_client_ip(request: Request) -> str | None:
-    """Extract client IP from request, considering proxy headers."""
+    """Extract client IP from request, considering proxy headers.
+
+    Uses the rightmost IP from X-Forwarded-For, which is the one appended
+    by the trusted reverse proxy (e.g., Heroku router). The leftmost value
+    is client-controlled and can be spoofed.
+    """
     forwarded_for = request.headers.get("X-Forwarded-For")
     if forwarded_for:
-        return forwarded_for.split(",")[0].strip()
-    real_ip = request.headers.get("X-Real-IP")
-    if real_ip:
-        return real_ip
+        # Rightmost IP is set by the trusted proxy (Heroku, nginx, etc.)
+        return forwarded_for.split(",")[-1].strip()
     if request.client:
         return request.client.host
     return None
@@ -252,7 +268,7 @@ async def chat_stream(
 
         except Exception as e:
             logger.error(f"Streaming error: {e}")
-            error_data = json.dumps({"detail": str(e), "error_type": "streaming_error"})
+            error_data = json.dumps({"detail": "An internal error occurred. Please try again later.", "error_type": "streaming_error"})
             yield f"event: error\ndata: {error_data}\n\n"
 
     return StreamingResponse(

@@ -18,7 +18,7 @@ class ChatResponse(BaseModel):
     """Response schema for chat endpoint."""
 
     content: str = Field(..., description="The generated response from Gemini")
-    token_usage: dict = Field(
+    token_usage: dict[str, int] = Field(
         default_factory=dict,
         description="Token usage statistics",
         examples=[{"input_tokens": 10, "output_tokens": 50}],

@@ -2,6 +2,8 @@
 
 import json
 import logging
+import time
+from collections.abc import AsyncGenerator
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from fastapi.responses import StreamingResponse
@@ -17,26 +19,11 @@ from app.services.guardrails import (
     get_guardrails_service,
     save_guardrail_log,
 )
+from app.utils import get_client_ip
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Chat"])
-
-
-def get_client_ip(request: Request) -> str | None:
-    """Extract client IP from request, considering proxy headers.
-
-    Uses the rightmost IP from X-Forwarded-For, which is the one appended
-    by the trusted reverse proxy (e.g., Heroku router). The leftmost value
-    is client-controlled and can be spoofed.
-    """
-    forwarded_for = request.headers.get("X-Forwarded-For")
-    if forwarded_for:
-        # Rightmost IP is set by the trusted proxy (Heroku, nginx, etc.)
-        return forwarded_for.split(",")[-1].strip()
-    if request.client:
-        return request.client.host
-    return None
 
 
 @router.post(
@@ -130,8 +117,7 @@ async def chat_stream(
             headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
         )
 
-    async def generate_sse():
-        import time
+    async def generate_sse() -> AsyncGenerator[str, None]:
         start_time = time.perf_counter()
         full_response = ""
         final_token_usage = {"input_tokens": 0, "output_tokens": 0}

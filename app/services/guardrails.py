@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.models.log import GuardrailLog
+from app.privacy import hash_value, redact_text
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
@@ -48,16 +49,16 @@ async def save_guardrail_log(
     """
     try:
         log_entry = GuardrailLog(
-            input_prompt=input_prompt[:5000],  # Truncate to avoid DB issues
+            input_prompt=redact_text(input_prompt, 5000),
             violation_type=violation_type,
             blocked_keyword=blocked_keyword,
-            client_ip=client_ip,
+            client_ip=hash_value(client_ip),
         )
         session.add(log_entry)
         await session.commit()
-        logger.info(f"Guardrail violation logged: {violation_type}")
+        logger.info("Guardrail violation logged: %s", violation_type)
     except Exception as e:
-        logger.error(f"Failed to log guardrail violation: {e}")
+        logger.error("Failed to log guardrail violation: %s", type(e).__name__)
         await session.rollback()
 
 

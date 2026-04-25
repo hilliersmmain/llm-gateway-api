@@ -1,8 +1,8 @@
 """Tests for Gemini service — generate_response and generate_response_stream."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from fastapi import HTTPException
 from google.api_core import exceptions as google_exceptions
 
@@ -63,7 +63,7 @@ def gemini_service():
 
 
 class TestGenerateResponse:
-    """Tests for GeminiService.generate_response (sync path)."""
+    """Tests for GeminiService.generate_response (async path)."""
 
     async def test_success_returns_text_and_tokens(self, gemini_service):
         """Should return response text and token usage on success."""
@@ -71,19 +71,19 @@ class TestGenerateResponse:
             text="Test response",
             usage_metadata=FakeUsageMetadata(prompt_tokens=5, candidates_tokens=15),
         )
-        gemini_service.client.models.generate_content.return_value = fake_response
+        gemini_service.client.aio.models.generate_content = AsyncMock(return_value=fake_response)
 
         text, token_usage = await gemini_service.generate_response("Hello")
 
         assert text == "Test response"
         assert token_usage == {"input_tokens": 5, "output_tokens": 15}
-        gemini_service.client.models.generate_content.assert_called_once()
+        gemini_service.client.aio.models.generate_content.assert_called_once()
 
     async def test_success_without_usage_metadata(self, gemini_service):
         """Should return zero tokens when usage_metadata is missing."""
         fake_response = FakeResponse(text="Response")
         fake_response.usage_metadata = None
-        gemini_service.client.models.generate_content.return_value = fake_response
+        gemini_service.client.aio.models.generate_content = AsyncMock(return_value=fake_response)
 
         text, token_usage = await gemini_service.generate_response("Hello")
 
@@ -94,7 +94,7 @@ class TestGenerateResponse:
         """Should return empty string when response.text is None."""
         fake_response = FakeResponse()
         fake_response.text = None
-        gemini_service.client.models.generate_content.return_value = fake_response
+        gemini_service.client.aio.models.generate_content = AsyncMock(return_value=fake_response)
 
         text, token_usage = await gemini_service.generate_response("Hello")
 
@@ -102,8 +102,8 @@ class TestGenerateResponse:
 
     async def test_resource_exhausted_raises_429(self, gemini_service):
         """Should raise HTTPException 429 when Gemini quota is exceeded."""
-        gemini_service.client.models.generate_content.side_effect = (
-            google_exceptions.ResourceExhausted("Quota exceeded")
+        gemini_service.client.aio.models.generate_content = AsyncMock(
+            side_effect=google_exceptions.ResourceExhausted("Quota exceeded")
         )
 
         with pytest.raises(HTTPException) as exc_info:
@@ -114,8 +114,8 @@ class TestGenerateResponse:
 
     async def test_generic_exception_raises_502(self, gemini_service):
         """Should raise HTTPException 502 on generic API errors."""
-        gemini_service.client.models.generate_content.side_effect = RuntimeError(
-            "Connection failed"
+        gemini_service.client.aio.models.generate_content = AsyncMock(
+            side_effect=RuntimeError("Connection failed")
         )
 
         with pytest.raises(HTTPException) as exc_info:

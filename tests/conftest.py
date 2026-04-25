@@ -1,17 +1,17 @@
 """Shared pytest fixtures for LLM Gateway API tests."""
 
-import pytest
-import unittest
 import random
+import unittest
 from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.main import app
 from app.core.database import get_session
+from app.main import app
 from app.services.gemini import get_gemini_service
 from app.services.guardrails import GuardrailsService
-
 
 
 @pytest.fixture

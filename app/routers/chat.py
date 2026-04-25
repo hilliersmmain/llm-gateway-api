@@ -5,10 +5,11 @@ import logging
 import time
 from collections.abc import AsyncGenerator
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.auth import require_api_key
 from app.core.database import get_session
 from app.middleware.logging import RequestTimer, save_request_log
 from app.models.schemas import ChatRequest, ChatResponse, ErrorResponse
@@ -40,9 +41,11 @@ async def chat(
     session: AsyncSession = Depends(get_session),
     guardrails: GuardrailsService = Depends(get_guardrails_service),
     gemini: GeminiService = Depends(get_gemini_service),
+    _: None = Depends(require_api_key),
 ):
     """Process a chat request through guardrails and Gemini."""
     client_ip = get_client_ip(request)
+    request_start = time.perf_counter()
 
     with RequestTimer() as timer:
         try:
@@ -58,7 +61,21 @@ async def chat(
             )
             raise
 
-        response_text, token_usage = await gemini.generate_response(chat_request.message)
+        try:
+            response_text, token_usage = await gemini.generate_response(chat_request.message)
+        except HTTPException as e:
+            background_tasks.add_task(
+                save_request_log,
+                session=session,
+                input_prompt=chat_request.message,
+                output_response="",
+                latency_ms=(time.perf_counter() - request_start) * 1000,
+                tokens_in=0,
+                tokens_out=0,
+                status="error",
+                error_message=e.detail,
+            )
+            raise
 
     background_tasks.add_task(
         save_request_log,
@@ -91,6 +108,7 @@ async def chat_stream(
     session: AsyncSession = Depends(get_session),
     guardrails: GuardrailsService = Depends(get_guardrails_service),
     gemini: GeminiService = Depends(get_gemini_service),
+    _: None = Depends(require_api_key),
 ):
     """Process a chat request with streaming response."""
     client_ip = get_client_ip(request)
@@ -151,7 +169,18 @@ async def chat_stream(
             logger.info(f"Streaming request completed in {latency_ms:.2f}ms")
 
         except Exception as e:
-            logger.error(f"Streaming error: {e}")
+            logger.error("Streaming error: %s", type(e).__name__)
+            background_tasks.add_task(
+                save_request_log,
+                session=session,
+                input_prompt=chat_request.message,
+                output_response="",
+                latency_ms=(time.perf_counter() - start_time) * 1000,
+                tokens_in=0,
+                tokens_out=0,
+                status="error",
+                error_message="Streaming error",
+            )
             error_data = json.dumps({"detail": "An internal error occurred. Please try again later.", "error_type": "streaming_error"})
             yield f"event: error\ndata: {error_data}\n\n"
 

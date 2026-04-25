@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-LLM Gateway API — a FastAPI backend that proxies chat requests to Google Gemini 2.5 Flash, with a vanilla JS frontend. Features rate limiting, input guardrails, request logging to PostgreSQL, and an analytics dashboard.
+LLM Gateway API — a FastAPI backend that proxies chat requests to Google Gemini 2.5 Flash, with a vanilla JS frontend. Features optional API-key auth, rate limiting, input guardrails, privacy-aware request logging to PostgreSQL, and an analytics dashboard.
 
 ## Common Commands
 
@@ -30,7 +30,7 @@ ruff check .
 
 **Backend (FastAPI, async):** Routes are split into APIRouter modules under `app/routers/`. The app uses dependency injection for services and background tasks for non-blocking DB writes.
 
-**Request flow:** Client → RateLimitMiddleware (per-IP) → endpoint → GuardrailsService.validate() → GeminiService.generate_response() → save logs via BackgroundTasks → return ChatResponse.
+**Request flow:** Client → body-size/security middleware → RateLimitMiddleware (per-IP) → endpoint auth (optional) → GuardrailsService.validate() → GeminiService.generate_response() (async + timeout/retry) → save logs via BackgroundTasks → return ChatResponse.
 
 **Key modules:**
 - `app/main.py` — App creation, lifespan, middleware setup, router inclusion, static file mount, exception handler
@@ -41,6 +41,7 @@ ruff check .
 - `app/services/guardrails.py` — Input validation: length check + blocked keyword regex
 - `app/middleware/rate_limit.py` — Sliding window rate limiter with pluggable backends (in-memory default, Redis optional)
 - `app/middleware/logging.py` — Async DB logging with truncation
+- `app/core/auth.py` — Optional API-key and admin-key auth dependencies
 - `app/core/config.py` — Pydantic Settings, all config via env vars
 - `app/core/database.py` — SQLAlchemy async engine + session factory
 - `app/models/log.py` — SQLModel tables: `RequestLog`, `GuardrailLog`
@@ -48,7 +49,7 @@ ruff check .
 
 **Frontend:** Static files in `static/` served by FastAPI's StaticFiles mount. Vanilla JS with localStorage for chat history. Uses SSE for streaming responses. CDN dependencies (Marked.js, DOMPurify, Chart.js, Stoplight Elements).
 
-**Database:** PostgreSQL 17 with async driver (asyncpg). Tables auto-created on startup via `SQLModel.metadata.create_all()`. No migration tool — schema changes require manual handling.
+**Database:** PostgreSQL 17 with async driver (asyncpg). Tables auto-created on startup via `SQLModel.metadata.create_all()`. Startup also performs retention cleanup for old request/guardrail logs based on `LOG_RETENTION_DAYS`. No migration tool — schema changes require manual handling.
 
 ## Testing
 
@@ -56,13 +57,13 @@ Tests use `pytest-asyncio` with `asyncio_mode = auto`. The test client overrides
 
 ## Environment
 
-Required: `GEMINI_API_KEY`, `DATABASE_URL` (defaults to docker-compose PostgreSQL). See `.env.example` for template. Optional: `REDIS_URL` for distributed rate limiting.
+Required: `GEMINI_API_KEY`, `DATABASE_URL`. Optional: `PROTECTED_PATHS`, `API_KEY`, `ADMIN_API_KEY`, `ALLOWED_ORIGINS`, `REDIS_URL`, `LOG_RAW_CONTENT`, `HASH_SALT`, `LOG_RETENTION_DAYS`, `GEMINI_TIMEOUT_SECONDS`, `GEMINI_RETRY_ATTEMPTS`, `MAX_REQUEST_BODY_BYTES`. See `.env.example`.
 
 ## Deployment
 
 - **Docker Compose:** API + PostgreSQL (Redis commented out)
 - **Heroku:** `Procfile` + `runtime.txt` (Python 3.12.3, Gunicorn + Uvicorn workers)
-- **CI:** GitHub Actions runs Ruff lint + pytest against PostgreSQL 17 service
+- **CI:** GitHub Actions runs Ruff lint + mypy + pytest (with coverage threshold) against PostgreSQL 17 service
 
 ## Custom Slash Commands
 

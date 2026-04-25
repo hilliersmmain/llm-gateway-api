@@ -1,5 +1,6 @@
 """Tests for rate limiting middleware."""
 
+import asyncio
 import time
 from unittest.mock import MagicMock, patch
 
@@ -23,7 +24,7 @@ class TestInMemoryRateLimitStore:
         
         # Make 5 requests with limit of 10
         for _ in range(5):
-            assert store.is_allowed("127.0.0.1", max_requests=10, window_seconds=60)
+            assert asyncio.run(store.is_allowed("127.0.0.1", max_requests=10, window_seconds=60))
 
     def test_blocks_requests_over_limit(self):
         """Should block requests when limit is exceeded."""
@@ -31,10 +32,10 @@ class TestInMemoryRateLimitStore:
         
         # Make 10 requests (at limit)
         for _ in range(10):
-            assert store.is_allowed("127.0.0.1", max_requests=10, window_seconds=60)
+            assert asyncio.run(store.is_allowed("127.0.0.1", max_requests=10, window_seconds=60))
         
         # 11th request should be blocked
-        assert not store.is_allowed("127.0.0.1", max_requests=10, window_seconds=60)
+        assert not asyncio.run(store.is_allowed("127.0.0.1", max_requests=10, window_seconds=60))
 
     def test_separate_limits_per_ip(self):
         """Different IPs should have separate rate limits."""
@@ -42,13 +43,13 @@ class TestInMemoryRateLimitStore:
         
         # Exhaust limit for IP1
         for _ in range(3):
-            store.is_allowed("192.168.1.1", max_requests=3, window_seconds=60)
+            asyncio.run(store.is_allowed("192.168.1.1", max_requests=3, window_seconds=60))
         
         # IP1 should be blocked
-        assert not store.is_allowed("192.168.1.1", max_requests=3, window_seconds=60)
+        assert not asyncio.run(store.is_allowed("192.168.1.1", max_requests=3, window_seconds=60))
         
         # IP2 should still be allowed
-        assert store.is_allowed("192.168.1.2", max_requests=3, window_seconds=60)
+        assert asyncio.run(store.is_allowed("192.168.1.2", max_requests=3, window_seconds=60))
 
     def test_window_reset(self):
         """Requests should be allowed after window resets."""
@@ -59,26 +60,26 @@ class TestInMemoryRateLimitStore:
         
         # Exhaust limit
         for _ in range(2):
-            store.is_allowed("127.0.0.1", max_requests=2, window_seconds=window_seconds)
+            asyncio.run(store.is_allowed("127.0.0.1", max_requests=2, window_seconds=window_seconds))
         
         # Should be blocked
-        assert not store.is_allowed("127.0.0.1", max_requests=2, window_seconds=window_seconds)
+        assert not asyncio.run(store.is_allowed("127.0.0.1", max_requests=2, window_seconds=window_seconds))
         
         # Wait for window to expire
         time.sleep(window_seconds + 0.1)
         
         # Should be allowed again
-        assert store.is_allowed("127.0.0.1", max_requests=2, window_seconds=window_seconds)
+        assert asyncio.run(store.is_allowed("127.0.0.1", max_requests=2, window_seconds=window_seconds))
 
     def test_get_retry_after(self):
         """Should return correct retry-after value."""
         store = InMemoryRateLimitStore()
         
         # Make a request
-        store.is_allowed("127.0.0.1", max_requests=1, window_seconds=60)
+        asyncio.run(store.is_allowed("127.0.0.1", max_requests=1, window_seconds=60))
         
         # Get retry after
-        retry_after = store.get_retry_after("127.0.0.1", window_seconds=60)
+        retry_after = asyncio.run(store.get_retry_after("127.0.0.1", window_seconds=60))
         
         # Should be approximately 60 seconds (with some margin)
         assert 58 <= retry_after <= 61
@@ -87,7 +88,7 @@ class TestInMemoryRateLimitStore:
         """Should return 0 for unknown IP."""
         store = InMemoryRateLimitStore()
         
-        retry_after = store.get_retry_after("unknown_ip", window_seconds=60)
+        retry_after = asyncio.run(store.get_retry_after("unknown_ip", window_seconds=60))
         assert retry_after == 0
 
 
@@ -194,8 +195,8 @@ class TestRateLimitMiddleware:
         response = client.get("/health")
         assert response.status_code == 200
 
-    def test_metrics_endpoint_bypasses_rate_limit(self, test_app):
-        """Metrics endpoint should not be rate limited."""
+    def test_metrics_endpoint_is_rate_limited(self, test_app):
+        """Metrics endpoint should be rate limited."""
         client = TestClient(test_app)
         
         # Exhaust rate limit on regular endpoint
@@ -205,9 +206,8 @@ class TestRateLimitMiddleware:
         # Verify regular endpoint is blocked
         assert client.get("/test").status_code == 429
         
-        # Metrics endpoint should still work
         response = client.get("/metrics")
-        assert response.status_code == 200
+        assert response.status_code == 429
 
 
 class TestRateLimitMiddlewareIPExtraction:

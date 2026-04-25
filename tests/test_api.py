@@ -1,5 +1,8 @@
 """Integration tests for API endpoints."""
 
+from fastapi import BackgroundTasks, HTTPException
+from unittest.mock import patch
+
 from fastapi.testclient import TestClient
 
 
@@ -91,6 +94,14 @@ class TestChatEndpoint:
         
         assert response.status_code == 422
 
+    def test_chat_requires_api_key_when_protected(self, client: TestClient):
+        """Protected mode should require API key for chat endpoint."""
+        with patch("app.core.auth.settings.protected_paths", True), patch("app.core.auth.settings.api_key", "test-key"):
+            response = client.post("/chat", json={"message": "Hello"})
+            assert response.status_code == 401
+            response_ok = client.post("/chat", json={"message": "Hello"}, headers={"X-API-Key": "test-key"})
+            assert response_ok.status_code == 200
+
 
 class TestChatStreamEndpoint:
     """Tests for /chat/stream endpoint."""
@@ -165,3 +176,50 @@ class TestStaticFiles:
         response = client.get("/")
         assert response.status_code == 200
         assert "text/html" in response.headers.get("content-type", "")
+
+
+class TestOperationalEndpoints:
+    """Tests for analytics/docs authentication and request limits."""
+
+    def test_docs_requires_admin_key_when_protected(self, client: TestClient):
+        with patch("app.core.auth.settings.protected_paths", True), patch("app.core.auth.settings.admin_api_key", "admin-key"):
+            response = client.get("/docs")
+            assert response.status_code == 401
+            response_ok = client.get("/docs", headers={"X-Admin-API-Key": "admin-key"})
+            assert response_ok.status_code == 200
+
+    def test_request_body_limit_returns_413(self, client: TestClient):
+        with patch("app.main.settings.max_request_body_bytes", 30):
+            response = client.post("/chat", json={"message": "x" * 500})
+            assert response.status_code == 413
+
+    def test_openapi_available_when_protected_paths_enabled(self, client: TestClient):
+        """OpenAPI must remain available for custom docs rendering."""
+        with patch("app.main.settings.protected_paths", True):
+            response = client.get("/openapi.json")
+            assert response.status_code == 200
+            assert "openapi" in response.json()
+
+
+class TestChatErrorLatency:
+    """Tests for non-streaming chat error logging latency."""
+
+    def test_chat_error_logs_non_negative_latency(self, client: TestClient, mock_gemini):
+        async def failing_generate_response(_message: str):
+            raise HTTPException(status_code=502, detail="upstream failed")
+
+        mock_gemini.generate_response = failing_generate_response
+
+        with patch.object(BackgroundTasks, "add_task", autospec=True) as add_task_mock:
+            response = client.post("/chat", json={"message": "hello"})
+
+        assert response.status_code == 502
+        assert add_task_mock.called
+
+        latency_values = [
+            kwargs["latency_ms"]
+            for _, kwargs in add_task_mock.call_args_list
+            if "latency_ms" in kwargs
+        ]
+        assert latency_values, "Expected latency value in add_task call."
+        assert latency_values[0] >= 0

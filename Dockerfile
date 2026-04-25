@@ -22,7 +22,7 @@ FROM python:3.12-slim AS runtime
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PATH="/root/.local/bin:$PATH"
+    PATH="/home/appuser/.local/bin:$PATH"
 
 WORKDIR /code
 
@@ -31,12 +31,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
+# Create non-root user
+RUN useradd --create-home --shell /bin/bash appuser
+
 # Copy installed packages from builder
-COPY --from=builder /root/.local /root/.local
+COPY --from=builder /root/.local /home/appuser/.local
 
 # Copy application code
 COPY ./app /code/app
 COPY ./static /code/static
+RUN chown -R appuser:appuser /code /home/appuser/.local
+USER appuser
 
 # Expose port
 EXPOSE 8000

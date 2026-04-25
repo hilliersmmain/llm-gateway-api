@@ -6,7 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import select
 
-from app.core.database import async_session
+from app.core.database import async_session, init_db
 from app.main import app
 from app.middleware.logging import save_request_log
 from app.models.log import GuardrailLog, RequestLog
@@ -29,6 +29,11 @@ def real_client():
 @pytest.fixture
 async def clean_logs():
     """Ensure request/guardrail logs are isolated between tests."""
+    try:
+        await init_db()
+    except Exception as e:
+        pytest.skip(f"Postgres not reachable for integration tests: {type(e).__name__}")
+
     async with async_session() as session:
         await session.execute(RequestLog.__table__.delete())
         await session.execute(GuardrailLog.__table__.delete())

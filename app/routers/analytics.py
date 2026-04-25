@@ -7,6 +7,7 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.auth import require_admin_api_key
 from app.core.config import get_settings
 from app.core.database import get_session
 from app.models.log import GuardrailLog, RequestLog
@@ -28,7 +29,10 @@ router = APIRouter(tags=["Analytics"])
     tags=["Metrics"],
     summary="Get API usage metrics",
 )
-async def get_metrics(session: AsyncSession = Depends(get_session)):
+async def get_metrics(
+    session: AsyncSession = Depends(get_session),
+    _: None = Depends(require_admin_api_key),
+):
     """Get API usage metrics for today."""
     today_start = datetime.combine(date.today(), datetime.min.time())
 
@@ -60,6 +64,7 @@ async def get_metrics(session: AsyncSession = Depends(get_session)):
 async def get_analytics(
     format: str | None = Query(None, description="Response format: 'json' or 'html'"),
     session: AsyncSession = Depends(get_session),
+    _: None = Depends(require_admin_api_key),
 ):
     """Get detailed analytics for the API."""
     now = datetime.now()
@@ -174,7 +179,7 @@ def _generate_analytics_html(data: AnalyticsResponse) -> HTMLResponse:
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LLM Gateway Analytics</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
     <style>
         * {{ margin: 0; padding: 0; box-sizing: border-box; }}
         body {{ font-family: system-ui, sans-serif; background: linear-gradient(135deg, #1a1a2e, #16213e); color: #e4e4e7; min-height: 100vh; padding: 2rem; }}

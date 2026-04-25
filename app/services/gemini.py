@@ -1,11 +1,12 @@
 """Gemini API service using google-genai SDK."""
 
+import asyncio
 import logging
 from collections.abc import AsyncGenerator
 
-from google.api_core import exceptions as google_exceptions
 from fastapi import HTTPException
 from google import genai
+from google.api_core import exceptions as google_exceptions
 from google.genai import types
 
 from app.core.config import get_settings
@@ -21,6 +22,21 @@ class GeminiService:
         """Initialize Gemini client."""
         self.client = genai.Client(api_key=settings.gemini_api_key)
         self.model = settings.model_name
+
+    async def _call_with_retry(self, call):
+        attempts = max(1, settings.gemini_retry_attempts)
+        last_error = None
+        for attempt in range(1, attempts + 1):
+            try:
+                return await asyncio.wait_for(call(), timeout=settings.gemini_timeout_seconds)
+            except Exception as e:  # pragma: no cover - unified retry path
+                last_error = e
+                if isinstance(e, google_exceptions.ResourceExhausted):
+                    raise
+                if attempt >= attempts:
+                    raise
+                await asyncio.sleep(0.25 * attempt)
+        raise last_error  # type: ignore[misc]
 
     async def generate_response_stream(
         self, message: str
@@ -40,14 +56,17 @@ class GeminiService:
         logger.info(f"Starting streaming request to Gemini model: {self.model}")
 
         try:
-            response_stream = await self.client.aio.models.generate_content_stream(
-                model=self.model,
-                contents=message,
-                config=types.GenerateContentConfig(
-                    temperature=0.7,
-                    max_output_tokens=2048,
-                ),
-            )
+            async def stream_call():
+                return await self.client.aio.models.generate_content_stream(
+                    model=self.model,
+                    contents=message,
+                    config=types.GenerateContentConfig(
+                        temperature=0.7,
+                        max_output_tokens=2048,
+                    ),
+                )
+
+            response_stream = await self._call_with_retry(stream_call)
 
             token_usage = {"input_tokens": 0, "output_tokens": 0}
 
@@ -72,13 +91,13 @@ class GeminiService:
 
         except Exception as e:
             if isinstance(e, google_exceptions.ResourceExhausted):
-                logger.warning(f"Gemini quota exceeded: {e}")
+                logger.warning("Gemini quota exceeded")
                 raise HTTPException(
                     status_code=429,
                     detail="Gemini quota exceeded. Please try again later.",
                 )
 
-            logger.error(f"Gemini streaming API error: {e}")
+            logger.error("Gemini streaming API error: %s", type(e).__name__)
             raise HTTPException(
                 status_code=502,
                 detail="Failed to get response from LLM service. Please try again later.",
@@ -97,14 +116,17 @@ class GeminiService:
         logger.info(f"Sending request to Gemini model: {self.model}")
 
         try:
-            response = self.client.models.generate_content(
-                model=self.model,
-                contents=message,
-                config=types.GenerateContentConfig(
-                    temperature=0.7,
-                    max_output_tokens=2048,
-                ),
-            )
+            async def generate_call():
+                return await self.client.aio.models.generate_content(
+                    model=self.model,
+                    contents=message,
+                    config=types.GenerateContentConfig(
+                        temperature=0.7,
+                        max_output_tokens=2048,
+                    ),
+                )
+
+            response = await self._call_with_retry(generate_call)
 
             # Extract response text
             response_text = response.text if response.text else ""
@@ -127,12 +149,12 @@ class GeminiService:
 
         except Exception as e:
             if isinstance(e, google_exceptions.ResourceExhausted):
-                logger.warning(f"Gemini quota exceeded: {e}")
+                logger.warning("Gemini quota exceeded")
                 raise HTTPException(
                     status_code=429,
                     detail="Gemini quota exceeded. Please try again later."
                 )
-            logger.error(f"Gemini API error: {e}")
+            logger.error("Gemini API error: %s", type(e).__name__)
             raise HTTPException(
                 status_code=502,
                 detail="Failed to get response from LLM service. Please try again later.",

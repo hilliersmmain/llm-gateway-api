@@ -2,11 +2,12 @@
 
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.log import RequestLog
+from app.privacy import redact_text
 
 logger = logging.getLogger(__name__)
 
@@ -24,20 +25,20 @@ async def save_request_log(
     """Save request log to database (background task)."""
     try:
         log_entry = RequestLog(
-            input_prompt=input_prompt[:5000],
-            output_response=output_response[:10000],
+            input_prompt=redact_text(input_prompt, 5000),
+            output_response=redact_text(output_response, 10000),
             latency_ms=latency_ms,
             tokens_in=tokens_in,
             tokens_out=tokens_out,
-            timestamp=datetime.now(timezone.utc).replace(tzinfo=None),
+            timestamp=datetime.now(UTC).replace(tzinfo=None),
             status=status,
             error_message=error_message,
         )
         session.add(log_entry)
         await session.commit()
-        logger.debug(f"Saved request log: latency={latency_ms:.2f}ms")
+        logger.debug("Saved request log: latency=%.2fms", latency_ms)
     except Exception as e:
-        logger.error(f"Failed to save request log: {e}")
+        logger.error("Failed to save request log: %s", type(e).__name__)
         await session.rollback()
 
 

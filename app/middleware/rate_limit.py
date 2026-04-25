@@ -14,11 +14,11 @@ logger = logging.getLogger(__name__)
 class RateLimitStore(Protocol):
     """Protocol for rate limit storage backends."""
 
-    def is_allowed(self, key: str, max_requests: int, window_seconds: int) -> bool:
+    async def is_allowed(self, key: str, max_requests: int, window_seconds: int) -> bool:
         """Check if a request is allowed and record it if so."""
         ...
 
-    def get_retry_after(self, key: str, window_seconds: int) -> int:
+    async def get_retry_after(self, key: str, window_seconds: int) -> int:
         """Get seconds until the rate limit resets."""
         ...
 
@@ -41,7 +41,7 @@ class InMemoryRateLimitStore:
         if not self._requests[key]:
             del self._requests[key]
 
-    def is_allowed(self, key: str, max_requests: int, window_seconds: int) -> bool:
+    async def is_allowed(self, key: str, max_requests: int, window_seconds: int) -> bool:
         """Check if request is allowed using sliding window."""
         self._cleanup_old_requests(key, window_seconds)
         
@@ -57,7 +57,7 @@ class InMemoryRateLimitStore:
         
         return True
 
-    def get_retry_after(self, key: str, window_seconds: int) -> int:
+    async def get_retry_after(self, key: str, window_seconds: int) -> int:
         """Get seconds until oldest request expires from window."""
         if key not in self._requests or not self._requests[key]:
             return 0
@@ -75,69 +75,48 @@ class RedisRateLimitStore:
         
         self._redis = redis.from_url(redis_url, decode_responses=True)
         self._prefix = "rate_limit:"
+        self._allow_script = """
+local key = KEYS[1]
+local now = tonumber(ARGV[1])
+local cutoff = tonumber(ARGV[2])
+local max_requests = tonumber(ARGV[3])
+local expiry = tonumber(ARGV[4])
+redis.call('ZREMRANGEBYSCORE', key, 0, cutoff)
+local count = redis.call('ZCARD', key)
+if count >= max_requests then
+  return 0
+end
+redis.call('ZADD', key, now, tostring(now))
+redis.call('EXPIRE', key, expiry)
+return 1
+"""
 
     def _get_key(self, key: str) -> str:
         """Get Redis key with prefix."""
         return f"{self._prefix}{key}"
 
-    def is_allowed(self, key: str, max_requests: int, window_seconds: int) -> bool:
-        """
-        Check if request is allowed using Redis sorted sets.
-        
-        Note: This is a synchronous wrapper. For production with high concurrency,
-        consider using async Redis operations.
-        """
-        import redis as sync_redis
-        
-        # Use sync redis for middleware compatibility
+    async def is_allowed(self, key: str, max_requests: int, window_seconds: int) -> bool:
+        """Check if request is allowed using an atomic Redis Lua script."""
         redis_key = self._get_key(key)
         now = time.time()
         cutoff = now - window_seconds
-        
-        # Parse URL and create sync connection
-        client = sync_redis.from_url(
-            self._redis.connection_pool.connection_kwargs.get('url', 'redis://localhost:6379'),
-            decode_responses=True
+        result = await self._redis.eval(
+            self._allow_script,
+            1,
+            redis_key,
+            now,
+            cutoff,
+            max_requests,
+            window_seconds,
         )
-        
-        pipe = client.pipeline()
-        
-        # Remove old entries
-        pipe.zremrangebyscore(redis_key, 0, cutoff)
-        # Count current requests
-        pipe.zcard(redis_key)
-        # Add new request
-        pipe.zadd(redis_key, {str(now): now})
-        # Set expiry
-        pipe.expire(redis_key, window_seconds)
-        
-        results = pipe.execute()
-        current_count = results[1]
-        
-        if current_count >= max_requests:
-            # Remove the request we just added since it's not allowed
-            client.zrem(redis_key, str(now))
-            return False
-        
-        return True
+        return bool(result)
 
-    def get_retry_after(self, key: str, window_seconds: int) -> int:
+    async def get_retry_after(self, key: str, window_seconds: int) -> int:
         """Get seconds until oldest request expires."""
-        import redis as sync_redis
-        
         redis_key = self._get_key(key)
-        
-        client = sync_redis.from_url(
-            self._redis.connection_pool.connection_kwargs.get('url', 'redis://localhost:6379'),
-            decode_responses=True
-        )
-        
-        # Get oldest timestamp
-        oldest = client.zrange(redis_key, 0, 0, withscores=True)
-        
+        oldest = await self._redis.zrange(redis_key, 0, 0, withscores=True)
         if not oldest:
             return 0
-        
         oldest_time = oldest[0][1]
         retry_after = int(oldest_time + window_seconds - time.time()) + 1
         return max(1, retry_after)
@@ -148,8 +127,8 @@ def create_rate_limit_store(redis_url: str | None = None) -> InMemoryRateLimitSt
     if redis_url:
         logger.info("Using Redis for rate limiting")
         return RedisRateLimitStore(redis_url)
-    
-    logger.info("Using in-memory store for rate limiting")
+
+    logger.warning("Using in-memory store for rate limiting; not recommended for multi-worker production.")
     return InMemoryRateLimitStore()
 
 
@@ -157,7 +136,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     """Middleware to enforce rate limiting per IP address."""
 
     # Paths excluded from rate limiting
-    EXCLUDED_PATHS = frozenset({"/health", "/metrics", "/docs", "/redoc", "/openapi.json"})
+    EXCLUDED_PATHS = frozenset({"/health"})
 
     def __init__(
         self,
@@ -192,8 +171,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         
         client_ip = self._get_client_ip(request)
         
-        if not self.store.is_allowed(client_ip, self.max_requests, self.window_seconds):
-            retry_after = self.store.get_retry_after(client_ip, self.window_seconds)
+        if not await self.store.is_allowed(client_ip, self.max_requests, self.window_seconds):
+            retry_after = await self.store.get_retry_after(client_ip, self.window_seconds)
             
             logger.warning(
                 f"Rate limit exceeded for IP {client_ip}. "

@@ -2,6 +2,8 @@
 
 import asyncio
 import logging
+import random
+import time
 from collections.abc import AsyncGenerator
 
 from fastapi import HTTPException
@@ -25,6 +27,8 @@ class GeminiService:
 
     async def _call_with_retry(self, call):
         attempts = max(1, settings.gemini_retry_attempts)
+        budget = settings.gemini_timeout_seconds * attempts
+        start = time.monotonic()
         last_error = None
         for attempt in range(1, attempts + 1):
             try:
@@ -35,7 +39,10 @@ class GeminiService:
                     raise
                 if attempt >= attempts:
                     raise
-                await asyncio.sleep(0.25 * attempt)
+                if time.monotonic() - start >= budget:
+                    raise
+                delay = min(8.0, 0.5 * 2 ** (attempt - 1)) + random.uniform(0, 0.1)
+                await asyncio.sleep(delay)
         raise last_error  # type: ignore[misc]
 
     async def generate_response_stream(

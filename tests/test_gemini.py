@@ -6,6 +6,7 @@ import pytest
 from fastapi import HTTPException
 from google.api_core import exceptions as google_exceptions
 
+import app.services.gemini as gemini_module
 from app.services.gemini import GeminiService
 
 
@@ -198,3 +199,139 @@ class TestGenerateResponseStream:
                 pass
 
         assert exc_info.value.status_code == 502
+
+
+class TestCallWithRetryBackoff:
+    """Tests for _call_with_retry exponential backoff, jitter, and budget guard."""
+
+    @pytest.fixture
+    def service(self):
+        with patch("app.services.gemini.genai") as mock_genai:
+            mock_client = MagicMock()
+            mock_genai.Client.return_value = mock_client
+            svc = GeminiService()
+            svc.client = mock_client
+            yield svc
+
+    async def test_exponential_backoff_delays(self, service, monkeypatch):
+        """Retry sleep delays should follow exponential backoff with jitter."""
+        sleep_calls: list[float] = []
+
+        async def fake_sleep(delay: float) -> None:
+            sleep_calls.append(delay)
+
+        monkeypatch.setattr(gemini_module.asyncio, "sleep", fake_sleep)
+        # time.monotonic returns a low value so budget is never exceeded
+        monkeypatch.setattr(gemini_module.time, "monotonic", lambda: 0.0)
+        # random.uniform always returns the midpoint of the jitter range
+        monkeypatch.setattr(gemini_module.random, "uniform", lambda a, b: 0.05)
+
+        call_count = 0
+
+        async def flaky_call():
+            nonlocal call_count
+            call_count += 1
+            if call_count < 3:
+                raise RuntimeError("transient error")
+            return "ok"
+
+        with patch.object(
+            gemini_module.asyncio,
+            "wait_for",
+            side_effect=lambda coro, timeout: coro,
+        ):
+            # Patch wait_for to just await the coroutine directly
+            async def direct_wait_for(coro, timeout):
+                return await coro
+
+            monkeypatch.setattr(gemini_module.asyncio, "wait_for", direct_wait_for)
+
+            with patch.object(service, "_call_with_retry", wraps=service._call_with_retry):
+                # Use 3 retry attempts so both sleeps occur
+                with patch("app.services.gemini.settings") as mock_settings:
+                    mock_settings.gemini_retry_attempts = 3
+                    mock_settings.gemini_timeout_seconds = 30
+                    result = await service._call_with_retry(flaky_call)
+
+        assert result == "ok"
+        assert len(sleep_calls) == 2
+        # attempt=1: min(8.0, 0.5 * 2^0) + 0.05 = 0.5 + 0.05 = 0.55
+        assert 0.5 <= sleep_calls[0] <= 0.6, f"attempt-1 sleep={sleep_calls[0]}"
+        # attempt=2: min(8.0, 0.5 * 2^1) + 0.05 = 1.0 + 0.05 = 1.05
+        assert 1.0 <= sleep_calls[1] <= 1.1, f"attempt-2 sleep={sleep_calls[1]}"
+
+    async def test_sleep_capped_at_eight_seconds(self, service, monkeypatch):
+        """Sleep delay should be capped at 8.0 seconds regardless of attempt number."""
+        sleep_calls: list[float] = []
+
+        async def fake_sleep(delay: float) -> None:
+            sleep_calls.append(delay)
+
+        monkeypatch.setattr(gemini_module.asyncio, "sleep", fake_sleep)
+        monkeypatch.setattr(gemini_module.time, "monotonic", lambda: 0.0)
+        monkeypatch.setattr(gemini_module.random, "uniform", lambda a, b: 0.05)
+
+        call_count = 0
+        total_attempts = 7
+
+        async def always_fails_then_succeeds():
+            nonlocal call_count
+            call_count += 1
+            if call_count < total_attempts:
+                raise RuntimeError("transient error")
+            return "ok"
+
+        async def direct_wait_for(coro, timeout):
+            return await coro
+
+        monkeypatch.setattr(gemini_module.asyncio, "wait_for", direct_wait_for)
+
+        with patch("app.services.gemini.settings") as mock_settings:
+            mock_settings.gemini_retry_attempts = total_attempts
+            mock_settings.gemini_timeout_seconds = 30
+            await service._call_with_retry(always_fails_then_succeeds)
+
+        # All sleep calls should be capped: max possible is 8.0 + 0.1 jitter
+        for delay in sleep_calls:
+            assert delay <= 8.1, f"Sleep not capped: {delay}"
+        # At attempt >= 5, the base is min(8.0, 0.5 * 2^4) = min(8.0, 8.0) = 8.0
+        assert sleep_calls[-1] <= 8.1
+
+    async def test_budget_guard_stops_retrying(self, service, monkeypatch):
+        """Should stop retrying when wall-clock time exceeds the total budget."""
+        async def fake_sleep(delay: float) -> None:
+            pass  # never actually sleep
+
+        monkeypatch.setattr(gemini_module.asyncio, "sleep", fake_sleep)
+
+        # Simulate monotonic advancing beyond budget on first check after failure
+        # budget = timeout * attempts = 5 * 3 = 15; return 20 to exceed budget
+        call_count = 0
+        mono_values = [0.0, 20.0]  # start=0, first check after failure=20 > budget
+
+        def fake_monotonic():
+            if mono_values:
+                return mono_values.pop(0)
+            return 20.0
+
+        monkeypatch.setattr(gemini_module.time, "monotonic", fake_monotonic)
+        monkeypatch.setattr(gemini_module.random, "uniform", lambda a, b: 0.0)
+
+        async def always_fails():
+            nonlocal call_count
+            call_count += 1
+            raise RuntimeError("persistent error")
+
+        async def direct_wait_for(coro, timeout):
+            return await coro
+
+        monkeypatch.setattr(gemini_module.asyncio, "wait_for", direct_wait_for)
+
+        with patch("app.services.gemini.settings") as mock_settings:
+            mock_settings.gemini_retry_attempts = 3
+            mock_settings.gemini_timeout_seconds = 5
+            with pytest.raises(RuntimeError, match="persistent error"):
+                await service._call_with_retry(always_fails)
+
+        # Budget guard should fire after first failure — only 1 call made
+        assert call_count == 1

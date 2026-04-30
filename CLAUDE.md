@@ -57,7 +57,7 @@ Tests use `pytest-asyncio` with `asyncio_mode = auto`. The test client overrides
 
 ## Environment
 
-Required: `GEMINI_API_KEY`. Required outside `ENVIRONMENT=development` (startup fails without them): `DATABASE_URL`, `HASH_SALT`. If `protected_paths` is true, admin routes also require `ADMIN_API_KEY` to be set independently — there is **no fallback** to `API_KEY`. Optional: `PROTECTED_PATHS`, `API_KEY`, `ALLOWED_ORIGINS`, `REDIS_URL`, `LOG_RAW_CONTENT`, `LOG_RETENTION_DAYS`, `GEMINI_TIMEOUT_SECONDS`, `GEMINI_RETRY_ATTEMPTS`, `MAX_REQUEST_BODY_BYTES`. See `.env.example`.
+Required: `GEMINI_API_KEY`. Required outside `ENVIRONMENT=development` (startup fails without them): `DATABASE_URL`, `HASH_SALT`. If `protected_paths` is true, admin routes also require `ADMIN_API_KEY` to be set independently — there is **no fallback** to `API_KEY`. Optional: `PROTECTED_PATHS`, `API_KEY`, `ALLOWED_ORIGINS`, `REDIS_URL`, `LOG_RAW_CONTENT`, `LOG_RETENTION_DAYS`, `GEMINI_TIMEOUT_SECONDS`, `GEMINI_RETRY_ATTEMPTS`, `MAX_REQUEST_BODY_BYTES`. CI/test only: `DB_POOL_DISABLED=1` disables the asyncpg connection pool (uses `NullPool`) so pytest-asyncio and Starlette's `TestClient` don't collide across asyncio loops. See `.env.example`.
 
 ## Deployment
 

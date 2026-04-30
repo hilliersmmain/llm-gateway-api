@@ -348,6 +348,32 @@ textarea {
   pointer-events: none;
 }
 
+#stop-btn {
+  background-color: var(--danger, #e53e3e);
+  color: white;
+  border: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: flex-end;
+  transition:
+    background-color 0.2s,
+    transform 0.1s;
+}
+#stop-btn:hover {
+  filter: brightness(1.1);
+}
+#stop-btn:active {
+  transform: scale(0.95);
+}
+#stop-btn i {
+  pointer-events: none;
+}
+
 /* Markdown Styles inside messages */
 .message-content pre {
   background-color: var(--code-bg);

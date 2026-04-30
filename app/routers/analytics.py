@@ -1,5 +1,6 @@
 """Analytics and metrics router."""
 
+import json
 from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Query
@@ -167,11 +168,22 @@ async def get_analytics(
 
 def _generate_analytics_html(data: AnalyticsResponse) -> HTMLResponse:
     """Generate HTML page with Chart.js visualizations."""
-    latency_labels = [b.hour[-8:-3] for b in data.latency_trend]
-    latency_values = [b.avg_latency_ms for b in data.latency_trend]
-    latency_counts = [b.request_count for b in data.latency_trend]
-    keyword_labels = [s.keyword for s in data.top_blocked_keywords]
-    keyword_counts = [s.count for s in data.top_blocked_keywords]
+    chart_payload = {
+        "latencyLabels": [b.hour[-8:-3] for b in data.latency_trend],
+        "latencyValues": [b.avg_latency_ms for b in data.latency_trend],
+        "latencyCounts": [b.request_count for b in data.latency_trend],
+        "keywordLabels": [s.keyword for s in data.top_blocked_keywords] or ["None"],
+        "keywordCounts": [s.count for s in data.top_blocked_keywords] or [0],
+        "tokensIn24h": data.total_tokens_in_24h,
+        "tokensIn7d": data.total_tokens_in_7d,
+        "tokensOut24h": data.total_tokens_out_24h,
+        "tokensOut7d": data.total_tokens_out_7d,
+        "successCount24h": data.success_count_24h,
+        "errorCount24h": data.error_count_24h,
+        "blocked24h": data.total_blocked_requests_24h,
+        "blocked7d": data.total_blocked_requests_7d,
+    }
+    chart_payload_json = json.dumps(chart_payload)
 
     html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -179,7 +191,11 @@ def _generate_analytics_html(data: AnalyticsResponse) -> HTMLResponse:
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LLM Gateway Analytics</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+    <script
+      src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"
+      integrity="sha384-JUh163oCRItcbPme8pYnROHQMC6fNKTBWtRG3I3I0erJkzNgL7uxKlNwcrcFKeqF"
+      crossorigin="anonymous"
+    ></script>
     <style>
         * {{ margin: 0; padding: 0; box-sizing: border-box; }}
         body {{ font-family: system-ui, sans-serif; background: linear-gradient(135deg, #1a1a2e, #16213e); color: #e4e4e7; min-height: 100vh; padding: 2rem; }}
@@ -219,16 +235,18 @@ def _generate_analytics_html(data: AnalyticsResponse) -> HTMLResponse:
             <div class="chart-card"><h3 class="chart-title">Security Overview</h3><canvas id="securityChart"></canvas></div>
         </div>
     </div>
+    <script id="chart-data" type="application/json">{chart_payload_json}</script>
     <script>
+        const data = JSON.parse(document.getElementById('chart-data').textContent);
         const colors = {{ primary: 'rgb(99,102,241)', secondary: 'rgb(139,92,246)', success: 'rgb(34,197,94)', danger: 'rgb(239,68,68)', warning: 'rgb(234,179,8)', grid: 'rgba(255,255,255,0.1)' }};
         const opts = {{ responsive: true, plugins: {{ legend: {{ labels: {{ color: '#e4e4e7' }} }} }}, scales: {{ x: {{ ticks: {{ color: '#a1a1aa' }}, grid: {{ color: colors.grid }} }}, y: {{ ticks: {{ color: '#a1a1aa' }}, grid: {{ color: colors.grid }} }} }} }};
         const pieOpts = {{ responsive: true, plugins: {{ legend: {{ position: 'bottom', labels: {{ color: '#e4e4e7' }} }} }} }};
-        new Chart(document.getElementById('latencyChart'), {{ type: 'line', data: {{ labels: {latency_labels}, datasets: [{{ label: 'Latency (ms)', data: {latency_values}, borderColor: colors.primary, fill: true, tension: 0.4 }}] }}, options: opts }});
-        new Chart(document.getElementById('tokenChart'), {{ type: 'bar', data: {{ labels: ['24h', '7d'], datasets: [{{ label: 'Input', data: [{data.total_tokens_in_24h}, {data.total_tokens_in_7d}], backgroundColor: colors.primary }}, {{ label: 'Output', data: [{data.total_tokens_out_24h}, {data.total_tokens_out_7d}], backgroundColor: colors.secondary }}] }}, options: opts }});
-        new Chart(document.getElementById('blockedChart'), {{ type: 'bar', data: {{ labels: {keyword_labels if keyword_labels else ['None']}, datasets: [{{ label: 'Count', data: {keyword_counts if keyword_counts else [0]}, backgroundColor: colors.danger }}] }}, options: {{ ...opts, indexAxis: 'y' }} }});
-        new Chart(document.getElementById('volumeChart'), {{ type: 'bar', data: {{ labels: {latency_labels}, datasets: [{{ label: 'Requests', data: {latency_counts}, backgroundColor: colors.success }}] }}, options: opts }});
-        new Chart(document.getElementById('successChart'), {{ type: 'doughnut', data: {{ labels: ['Success', 'Errors'], datasets: [{{ data: [{data.success_count_24h}, {data.error_count_24h}], backgroundColor: [colors.success, colors.danger] }}] }}, options: pieOpts }});
-        new Chart(document.getElementById('securityChart'), {{ type: 'bar', data: {{ labels: ['24h', '7d'], datasets: [{{ label: 'Blocked Requests', data: [{data.total_blocked_requests_24h}, {data.total_blocked_requests_7d}], backgroundColor: [colors.warning, colors.danger] }}] }}, options: opts }});
+        new Chart(document.getElementById('latencyChart'), {{ type: 'line', data: {{ labels: data.latencyLabels, datasets: [{{ label: 'Latency (ms)', data: data.latencyValues, borderColor: colors.primary, fill: true, tension: 0.4 }}] }}, options: opts }});
+        new Chart(document.getElementById('tokenChart'), {{ type: 'bar', data: {{ labels: ['24h', '7d'], datasets: [{{ label: 'Input', data: [data.tokensIn24h, data.tokensIn7d], backgroundColor: colors.primary }}, {{ label: 'Output', data: [data.tokensOut24h, data.tokensOut7d], backgroundColor: colors.secondary }}] }}, options: opts }});
+        new Chart(document.getElementById('blockedChart'), {{ type: 'bar', data: {{ labels: data.keywordLabels, datasets: [{{ label: 'Count', data: data.keywordCounts, backgroundColor: colors.danger }}] }}, options: {{ ...opts, indexAxis: 'y' }} }});
+        new Chart(document.getElementById('volumeChart'), {{ type: 'bar', data: {{ labels: data.latencyLabels, datasets: [{{ label: 'Requests', data: data.latencyCounts, backgroundColor: colors.success }}] }}, options: opts }});
+        new Chart(document.getElementById('successChart'), {{ type: 'doughnut', data: {{ labels: ['Success', 'Errors'], datasets: [{{ data: [data.successCount24h, data.errorCount24h], backgroundColor: [colors.success, colors.danger] }}] }}, options: pieOpts }});
+        new Chart(document.getElementById('securityChart'), {{ type: 'bar', data: {{ labels: ['24h', '7d'], datasets: [{{ label: 'Blocked Requests', data: [data.blocked24h, data.blocked7d], backgroundColor: [colors.warning, colors.danger] }}] }}, options: opts }});
     </script>
 </body>
 </html>"""

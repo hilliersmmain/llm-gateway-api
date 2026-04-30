@@ -32,6 +32,21 @@ def get_url() -> str:
     return url
 
 
+def _compare_type(context, inspected_column, metadata_column, inspected_type, metadata_type):  # noqa: ANN001
+    """Suppress false-positive schema drift between TEXT() and AutoString().
+
+    SQLModel maps plain ``str`` fields to ``AutoString`` (a ``String`` subclass
+    without a length limit).  PostgreSQL stores both ``VARCHAR`` (without length)
+    and ``TEXT`` identically, so there is no real difference.  Without this hook,
+    ``alembic check`` would flag every plain-string column as drifted and fail CI.
+    """
+    from sqlalchemy import String, Text  # noqa: PLC0415
+
+    if isinstance(inspected_type, Text) and isinstance(metadata_type, String):
+        return False  # no real type change — suppress this diff
+    return None  # fall back to Alembic's default comparison
+
+
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode.
 
@@ -47,6 +62,7 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        compare_type=_compare_type,
     )
 
     with context.begin_transaction():
@@ -54,7 +70,11 @@ def run_migrations_offline() -> None:
 
 
 def do_run_migrations(connection: Connection) -> None:
-    context.configure(connection=connection, target_metadata=target_metadata)
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        compare_type=_compare_type,
+    )
 
     with context.begin_transaction():
         context.run_migrations()

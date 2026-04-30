@@ -1,6 +1,6 @@
 """Integration tests for API endpoints."""
 
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from fastapi import BackgroundTasks, HTTPException
 from fastapi.testclient import TestClient
@@ -23,6 +23,13 @@ class TestHealthEndpoint:
         assert "version" in data
         assert data["status"] == "healthy"
         assert data["version"] == "1.0.0"
+
+    def test_health_returns_503_when_db_unavailable(self, client: TestClient, mock_db_session):
+        """Health endpoint should return 503 if the DB query fails."""
+        mock_db_session.execute = AsyncMock(side_effect=Exception("DB down"))
+        response = client.get("/health")
+        assert response.status_code == 503
+        assert "Database unavailable" in response.json()["detail"]
 
 
 class TestChatEndpoint:
@@ -166,6 +173,23 @@ class TestChatStreamEndpoint:
         assert "event: done" in content
         # done event should include token usage
         assert "token_usage" in content
+
+    def test_stream_unhandled_exception_returns_sse_error(self, client: TestClient, mock_gemini):
+        """An unexpected exception during streaming should yield an SSE error event."""
+        async def failing_stream(_message: str):
+            raise RuntimeError("Unexpected upstream failure")
+            yield  # make it a generator
+
+        mock_gemini.generate_response_stream = failing_stream
+
+        response = client.post(
+            "/chat/stream",
+            json={"message": "trigger internal error"}
+        )
+        assert response.status_code == 200
+        assert "text/event-stream" in response.headers.get("content-type", "")
+        assert "event: error" in response.text
+        assert "streaming_error" in response.text
 
 
 class TestStaticFiles:

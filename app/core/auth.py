@@ -31,5 +31,4 @@ async def require_admin_api_key(x_admin_api_key: str | None = Header(default=Non
     """Require admin key for analytics/metrics and docs."""
     if not settings.protected_paths:
         return
-    expected = settings.admin_api_key or settings.api_key
-    _require_key(x_admin_api_key, expected, "Invalid admin API key.")
+    _require_key(x_admin_api_key, settings.admin_api_key, "Invalid admin API key.")

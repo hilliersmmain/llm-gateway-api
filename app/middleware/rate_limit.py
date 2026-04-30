@@ -100,7 +100,7 @@ return 1
         redis_key = self._get_key(key)
         now = time.time()
         cutoff = now - window_seconds
-        result = await self._redis.eval(
+        result = await self._redis.eval(  # type: ignore[misc]  # redis-py stubs type eval() as Awaitable|str; always awaitable in async client
             self._allow_script,
             1,
             redis_key,

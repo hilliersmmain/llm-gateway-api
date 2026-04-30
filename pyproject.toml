@@ -18,4 +18,4 @@ warn_return_any = true
 warn_unused_configs = true
 check_untyped_defs = true
 exclude = ["tests/"]
-disable_error_code = ["call-arg", "call-overload", "arg-type", "union-attr", "misc"]
+disable_error_code = ["call-arg", "call-overload"]

@@ -49,7 +49,7 @@ ruff check .
 
 **Frontend:** Static files in `static/` served by FastAPI's StaticFiles mount. Vanilla JS with localStorage for chat history. Uses SSE for streaming responses. CDN dependencies (Marked.js, DOMPurify, Chart.js, Stoplight Elements).
 
-**Database:** PostgreSQL 17 with async driver (asyncpg). Tables auto-created on startup via `SQLModel.metadata.create_all()`. Startup also performs retention cleanup for old request/guardrail logs based on `LOG_RETENTION_DAYS`. No migration tool — schema changes require manual handling.
+**Database:** PostgreSQL 17 with async driver (asyncpg) at runtime; sync psycopg2 inside Alembic for migrations. Schema is owned by Alembic — `init_db()` runs `alembic upgrade head` via `asyncio.to_thread()` on startup. Startup also performs retention cleanup for old request/guardrail logs based on `LOG_RETENTION_DAYS`. CI runs `alembic check` to fail on schema drift between models and migrations.
 
 ## Testing
 
@@ -57,7 +57,7 @@ Tests use `pytest-asyncio` with `asyncio_mode = auto`. The test client overrides
 
 ## Environment
 
-Required: `GEMINI_API_KEY`, `DATABASE_URL`. Optional: `PROTECTED_PATHS`, `API_KEY`, `ADMIN_API_KEY`, `ALLOWED_ORIGINS`, `REDIS_URL`, `LOG_RAW_CONTENT`, `HASH_SALT`, `LOG_RETENTION_DAYS`, `GEMINI_TIMEOUT_SECONDS`, `GEMINI_RETRY_ATTEMPTS`, `MAX_REQUEST_BODY_BYTES`. See `.env.example`.
+Required: `GEMINI_API_KEY`. Required outside `ENVIRONMENT=development` (startup fails without them): `DATABASE_URL`, `HASH_SALT`. If `protected_paths` is true, admin routes also require `ADMIN_API_KEY` to be set independently — there is **no fallback** to `API_KEY`. Optional: `PROTECTED_PATHS`, `API_KEY`, `ALLOWED_ORIGINS`, `REDIS_URL`, `LOG_RAW_CONTENT`, `LOG_RETENTION_DAYS`, `GEMINI_TIMEOUT_SECONDS`, `GEMINI_RETRY_ATTEMPTS`, `MAX_REQUEST_BODY_BYTES`. See `.env.example`.
 
 ## Deployment
 

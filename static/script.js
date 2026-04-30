@@ -3,6 +3,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const chatContainer = document.getElementById('chat-container');
     const userInput = document.getElementById('userInput');
     const sendBtn = document.getElementById('send-btn');
+    const stopBtn = document.getElementById('stop-btn');
     const newChatBtn = document.getElementById('newChatBtn');
     const historyList = document.getElementById('historyList');
     const currentChatTitle = document.getElementById('currentChatTitle');
@@ -12,6 +13,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- State ---
     let currentChatId = null;
+    let activeAbortController = null;
     const STORAGE_KEY = 'llm_gateway_chats';
 
     // --- Initialization ---
@@ -20,11 +22,11 @@ document.addEventListener('DOMContentLoaded', () => {
     function init() {
         loadTheme();
         loadHistory();
-        
+
         // Check if we need to load a specific chat or create new
         // For now, simple logic: create new if none active
         createNewChat(true);
-        
+
         setupEventListeners();
         setupHistoryDelegation(); // Added delegation setup
         autoResizeTextarea();
@@ -39,6 +41,12 @@ document.addEventListener('DOMContentLoaded', () => {
             sendMessage();
         });
 
+        stopBtn.addEventListener('click', () => {
+            if (activeAbortController) {
+                activeAbortController.abort();
+            }
+        });
+
         userInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
@@ -50,12 +58,12 @@ document.addEventListener('DOMContentLoaded', () => {
             autoResizeTextarea();
             toggleSendButton();
         });
-        
+
         newChatBtn.addEventListener('click', () => {
             createNewChat(true);
             if (window.innerWidth <= 768) sidebar.classList.remove('active');
         });
-        
+
         themeToggleBtn.addEventListener('click', toggleTheme);
 
         if (menuToggle) {
@@ -66,9 +74,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Close sidebar when clicking outside on mobile
         document.addEventListener('click', (e) => {
-            if (window.innerWidth <= 768 && 
-                sidebar.classList.contains('active') && 
-                !sidebar.contains(e.target) && 
+            if (window.innerWidth <= 768 &&
+                sidebar.classList.contains('active') &&
+                !sidebar.contains(e.target) &&
                 !menuToggle.contains(e.target)) {
                 sidebar.classList.remove('active');
             }
@@ -76,6 +84,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- Chat Logic ---
+
+    function setStreamingMode(isStreaming) {
+        sendBtn.hidden = isStreaming;
+        stopBtn.hidden = !isStreaming;
+        userInput.disabled = isStreaming;
+    }
 
     async function sendMessage() {
         const text = userInput.value.trim();
@@ -89,48 +103,169 @@ document.addEventListener('DOMContentLoaded', () => {
         userInput.value = '';
         autoResizeTextarea();
         toggleSendButton();
-        
+
         // Save to History (if first message, creates the chat entry)
         saveToHistory('user', text);
 
-        // API Call
+        // Show typing indicator and enter streaming mode
+        showTypingIndicator();
+        setStreamingMode(true);
+
+        activeAbortController = new AbortController();
+
+        let partial = '';
+        let botBubbleContent = null;
+
+        // Creates the bot message bubble on first chunk, replacing the typing indicator.
+        // Returns the content div so subsequent chunks can update it.
+        function getOrCreateBotBubble() {
+            if (botBubbleContent) return botBubbleContent;
+            removeTypingIndicator();
+            const msgDiv = document.createElement('div');
+            msgDiv.className = 'message bot';
+            const avatarDiv = document.createElement('div');
+            avatarDiv.className = 'avatar';
+            const avatarIcon = document.createElement('i');
+            avatarIcon.className = 'fas fa-robot';
+            avatarDiv.appendChild(avatarIcon);
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'message-content';
+            msgDiv.appendChild(avatarDiv);
+            msgDiv.appendChild(contentDiv);
+            chatContainer.appendChild(msgDiv);
+            botBubbleContent = contentDiv;
+            return botBubbleContent;
+        }
+
+        // Re-render the partial markdown into the bubble.
+        // Content is sanitized via DOMPurify before being set as HTML.
+        function renderPartial(currentText) {
+            const bubble = getOrCreateBotBubble();
+            // DOMPurify.sanitize ensures the HTML is safe before assignment
+            bubble.innerHTML = DOMPurify.sanitize(marked.parse(currentText));
+            scrollToBottom();
+        }
+
+        function finishStreaming() {
+            activeAbortController = null;
+            setStreamingMode(false);
+            toggleSendButton();
+        }
+
         try {
-            showTypingIndicator();
-            
-            const response = await fetch('/chat', {
+            const response = await fetch('/chat/stream', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message: text }) 
+                body: JSON.stringify({ message: text }),
+                signal: activeAbortController.signal,
             });
 
-            if (!response.ok) throw new Error('API request failed');
+            if (!response.ok) {
+                throw new Error('API request failed with status ' + response.status);
+            }
 
-            const data = await response.json();
-            
-            const botMessage = data.content; // Updated from 'response' to 'content' based on ChatResponse schema in main.py
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder('utf-8');
+            let buffer = '';
 
-            removeTypingIndicator();
-            appendMessage('bot', botMessage);
-            saveToHistory('bot', botMessage);
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                buffer += decoder.decode(value, { stream: true });
+
+                // Process complete SSE messages (terminated by double newline)
+                let boundary;
+                while ((boundary = buffer.indexOf('\n\n')) !== -1) {
+                    const rawEvent = buffer.slice(0, boundary);
+                    buffer = buffer.slice(boundary + 2);
+
+                    let eventName = '';
+                    let dataLine = '';
+
+                    for (const line of rawEvent.split('\n')) {
+                        if (line.startsWith('event: ')) {
+                            eventName = line.slice(7).trim();
+                        } else if (line.startsWith('data: ')) {
+                            dataLine = line.slice(6).trim();
+                        }
+                    }
+
+                    if (!dataLine) continue;
+
+                    let parsed;
+                    try {
+                        parsed = JSON.parse(dataLine);
+                    } catch (_e) {
+                        continue;
+                    }
+
+                    if (eventName === 'chunk' && parsed.text) {
+                        partial += parsed.text;
+                        renderPartial(partial);
+                    } else if (eventName === 'done') {
+                        if (!partial) {
+                            getOrCreateBotBubble().textContent = '';
+                        }
+                        saveToHistory('bot', partial);
+                        finishStreaming();
+                        return;
+                    } else if (eventName === 'error') {
+                        removeTypingIndicator();
+                        const errMsg = (parsed && parsed.detail) ? parsed.detail : 'An error occurred. Please try again.';
+                        if (botBubbleContent) {
+                            botBubbleContent.textContent = errMsg;
+                        } else {
+                            appendMessage('bot', errMsg);
+                        }
+                        finishStreaming();
+                        return;
+                    }
+                }
+            }
+
+            // Stream ended without a done event — persist what we have
+            if (partial) {
+                saveToHistory('bot', partial);
+            }
+            finishStreaming();
 
         } catch (error) {
-            console.error('Send Message Error:', error);
-            removeTypingIndicator();
-            appendMessage('bot', 'Error: Could not connect to the server. ' + error.message);
+            if (error.name === 'AbortError') {
+                // User-triggered cancel — append stopped marker and persist
+                if (partial) {
+                    partial += ' [stopped]';
+                    renderPartial(partial);
+                    saveToHistory('bot', partial);
+                } else {
+                    removeTypingIndicator();
+                    appendMessage('bot', '[stopped]');
+                    saveToHistory('bot', '[stopped]');
+                }
+            } else {
+                removeTypingIndicator();
+                const errMsg = 'Error: Could not connect to the server. ' + error.message;
+                if (botBubbleContent) {
+                    botBubbleContent.textContent = errMsg;
+                } else {
+                    appendMessage('bot', errMsg);
+                }
+            }
+            finishStreaming();
         }
     }
 
     function appendMessage(role, text) {
         const msgDiv = document.createElement('div');
         msgDiv.className = `message ${role}`;
-        
+
         const avatarDiv = document.createElement('div');
         avatarDiv.className = 'avatar';
         avatarDiv.innerHTML = role === 'user' ? '<i class="fas fa-user"></i>' : '<i class="fas fa-robot"></i>';
 
         const contentDiv = document.createElement('div');
         contentDiv.className = 'message-content';
-        
+
         if (role === 'bot') {
             // Configure marked to be safe
             contentDiv.innerHTML = DOMPurify.sanitize(marked.parse(text));
@@ -168,7 +303,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function createNewChat(clearUI = true) {
         currentChatId = Date.now().toString(); // Temporary ID until first save? Or use this as permanent.
-        
+
         if (clearUI) {
             chatContainer.innerHTML = '';
             // Add welcome message
@@ -180,9 +315,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     <p>Hello! I'm your LLM Gateway assistant. How can I help you today?</p>
                 </div>`;
             chatContainer.appendChild(welcomeDiv);
-            
+
             currentChatTitle.textContent = 'New Conversation';
-            
+
             // Remove active class from sidebar items
             document.querySelectorAll('.history-item').forEach(el => el.classList.remove('active'));
         }
@@ -190,7 +325,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function saveToHistory(role, text) {
         const chats = getChats();
-        
+
         if (!chats[currentChatId]) {
             chats[currentChatId] = {
                 id: currentChatId,
@@ -201,10 +336,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         chats[currentChatId].messages.push({ role, text });
-        chats[currentChatId].timestamp = Date.now(); 
-        
+        chats[currentChatId].timestamp = Date.now();
+
         saveChats(chats);
-        
+
         // Update title if it's still Generic
         if (currentChatTitle.textContent === 'New Conversation') {
             currentChatTitle.textContent = chats[currentChatId].title;
@@ -220,7 +355,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const sortedChats = Object.values(chats).sort((a, b) => b.timestamp - a.timestamp);
 
         historyList.innerHTML = '';
-        
+
         sortedChats.forEach(chat => {
             const div = document.createElement('div');
             div.className = `history-item ${chat.id === currentChatId ? 'active' : ''}`;
@@ -251,12 +386,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // New delegated listener setup (call this in init/setupEventListeners)
     function setupHistoryDelegation() {
         if (!historyList) {
-            console.error('historyList not found');
             return;
         }
         historyList.addEventListener('click', (e) => {
             const delBtn = e.target.closest('.delete-chat-btn');
-            
+
             // Case 1: Delete Button Clicked
             if (delBtn) {
                 e.preventDefault();
@@ -280,16 +414,16 @@ document.addEventListener('DOMContentLoaded', () => {
         currentChatId = id;
         const chats = getChats();
         const chat = chats[id];
-        
+
         if (!chat) return;
 
         currentChatTitle.textContent = chat.title;
-        chatContainer.innerHTML = ''; 
-        
+        chatContainer.innerHTML = '';
+
         chat.messages.forEach(msg => {
             appendMessage(msg.role, msg.text);
         });
-        
+
         renderHistoryList(); // to update 'active' class
         scrollToBottom();
     }
@@ -299,12 +433,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const chats = getChats();
             delete chats[id];
             localStorage.setItem(STORAGE_KEY, JSON.stringify(chats)); // Save without render first?
-            
+
             // If we deleted the current chat, reset UI
             if (currentChatId === id) {
                 createNewChat(true);
             }
-            
+
             renderHistoryList(); // Render after everything is settled
         }
     }
@@ -337,7 +471,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function toggleTheme() {
         const body = document.body;
         const isDark = body.getAttribute('data-theme') === 'dark';
-        
+
         if (isDark) {
             body.removeAttribute('data-theme');
             localStorage.setItem('theme', 'light');

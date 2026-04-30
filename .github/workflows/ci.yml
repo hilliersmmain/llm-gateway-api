@@ -38,6 +38,11 @@ jobs:
             requirements-dev.txt
       - name: Install dependencies
         run: pip install -r requirements-dev.txt
+      - name: Apply migrations
+        env:
+          DATABASE_URL: postgresql+asyncpg://user:password@localhost:5432/llm_gateway
+          GEMINI_API_KEY: test_key
+        run: alembic upgrade head
       - name: Run tests
         env:
           DATABASE_URL: postgresql+asyncpg://user:password@localhost:5432/llm_gateway
@@ -50,11 +55,6 @@ jobs:
       - name: Security audit
         run: pip install pip-audit && pip-audit -r requirements.txt --strict
         continue-on-error: true
-      - name: Apply migrations
-        env:
-          DATABASE_URL: postgresql+asyncpg://user:password@localhost:5432/llm_gateway
-          GEMINI_API_KEY: test_key
-        run: alembic upgrade head
       - name: Check for schema drift
         env:
           DATABASE_URL: postgresql+asyncpg://user:password@localhost:5432/llm_gateway

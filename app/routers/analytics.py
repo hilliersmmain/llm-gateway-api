@@ -38,10 +38,10 @@ async def get_metrics(
     today_start = datetime.combine(date.today(), datetime.min.time())
 
     query = select(
-        func.count(RequestLog.id).label("total_requests"),
+        func.count().label("total_requests"),
         func.coalesce(func.sum(RequestLog.tokens_in), 0).label("total_tokens_in"),
         func.coalesce(func.sum(RequestLog.tokens_out), 0).label("total_tokens_out"),
-    ).where(RequestLog.timestamp >= today_start)
+    ).where(RequestLog.timestamp >= today_start)  # type: ignore[arg-type]  # SQLAlchemy __ge__ returns ColumnElement, not bool
 
     result = await session.execute(query)
     row = result.one()
@@ -74,18 +74,18 @@ async def get_analytics(
 
     # 24h metrics
     query_24h = select(
-        func.count(RequestLog.id).label("total_requests"),
+        func.count().label("total_requests"),
         func.coalesce(func.sum(RequestLog.tokens_in), 0).label("total_tokens_in"),
         func.coalesce(func.sum(RequestLog.tokens_out), 0).label("total_tokens_out"),
-    ).where(RequestLog.timestamp >= time_24h_ago)
+    ).where(RequestLog.timestamp >= time_24h_ago)  # type: ignore[arg-type]  # SQLAlchemy __ge__ returns ColumnElement
     row_24h = (await session.execute(query_24h)).one()
 
     # 7d metrics
     query_7d = select(
-        func.count(RequestLog.id).label("total_requests"),
+        func.count().label("total_requests"),
         func.coalesce(func.sum(RequestLog.tokens_in), 0).label("total_tokens_in"),
         func.coalesce(func.sum(RequestLog.tokens_out), 0).label("total_tokens_out"),
-    ).where(RequestLog.timestamp >= time_7d_ago)
+    ).where(RequestLog.timestamp >= time_7d_ago)  # type: ignore[arg-type]  # SQLAlchemy __ge__ returns ColumnElement
     row_7d = (await session.execute(query_7d)).one()
 
     # Hourly latency buckets
@@ -93,9 +93,9 @@ async def get_analytics(
         select(
             func.date_trunc("hour", RequestLog.timestamp).label("hour"),
             func.avg(RequestLog.latency_ms).label("avg_latency"),
-            func.count(RequestLog.id).label("request_count"),
+            func.count().label("request_count"),
         )
-        .where(RequestLog.timestamp >= time_24h_ago)
+        .where(RequestLog.timestamp >= time_24h_ago)  # type: ignore[arg-type]  # SQLAlchemy __ge__ returns ColumnElement
         .group_by("hour")
         .order_by("hour")
     )
@@ -111,37 +111,37 @@ async def get_analytics(
 
     # Top blocked keywords
     blocked_query = (
-        select(GuardrailLog.blocked_keyword, func.count(GuardrailLog.id).label("count"))
-        .where(GuardrailLog.blocked_keyword.isnot(None), GuardrailLog.timestamp >= time_7d_ago)
+        select(GuardrailLog.blocked_keyword, func.count().label("keyword_count"))
+        .where(GuardrailLog.blocked_keyword.isnot(None), GuardrailLog.timestamp >= time_7d_ago)  # type: ignore[union-attr,arg-type]  # SQLModel field is InstrumentedAttribute at class level
         .group_by(GuardrailLog.blocked_keyword)
-        .order_by(func.count(GuardrailLog.id).desc())
+        .order_by(func.count().desc())
         .limit(10)
     )
     blocked_rows = (await session.execute(blocked_query)).all()
-    top_blocked_keywords = [BlockedKeywordStat(keyword=row.blocked_keyword, count=row.count) for row in blocked_rows]
+    top_blocked_keywords = [BlockedKeywordStat(keyword=row.blocked_keyword, count=row.keyword_count) for row in blocked_rows]
 
     # Total blocked 24h
     blocked_24h = (await session.execute(
-        select(func.count(GuardrailLog.id)).where(GuardrailLog.timestamp >= time_24h_ago)
+        select(func.count()).where(GuardrailLog.timestamp >= time_24h_ago)  # type: ignore[arg-type]  # SQLAlchemy __ge__ returns ColumnElement
     )).scalar() or 0
 
     # Total blocked 7d
     blocked_7d = (await session.execute(
-        select(func.count(GuardrailLog.id)).where(GuardrailLog.timestamp >= time_7d_ago)
+        select(func.count()).where(GuardrailLog.timestamp >= time_7d_ago)  # type: ignore[arg-type]  # SQLAlchemy __ge__ returns ColumnElement
     )).scalar() or 0
 
     # Success/Error counts for success rate chart
     success_count = (await session.execute(
-        select(func.count(RequestLog.id)).where(
-            RequestLog.timestamp >= time_24h_ago,
-            RequestLog.status == "success"
+        select(func.count()).where(
+            RequestLog.timestamp >= time_24h_ago,  # type: ignore[arg-type]  # SQLAlchemy __ge__ returns ColumnElement
+            RequestLog.status == "success",  # type: ignore[arg-type]  # SQLAlchemy __eq__ returns ColumnElement
         )
     )).scalar() or 0
 
     error_count = (await session.execute(
-        select(func.count(RequestLog.id)).where(
-            RequestLog.timestamp >= time_24h_ago,
-            RequestLog.status != "success"
+        select(func.count()).where(
+            RequestLog.timestamp >= time_24h_ago,  # type: ignore[arg-type]  # SQLAlchemy __ge__ returns ColumnElement
+            RequestLog.status != "success",  # type: ignore[arg-type]  # SQLAlchemy __ne__ returns ColumnElement
         )
     )).scalar() or 0
 

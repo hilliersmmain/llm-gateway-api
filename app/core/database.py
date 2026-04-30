@@ -15,6 +15,9 @@ from app.models.log import GuardrailLog, RequestLog
 
 settings = get_settings()
 
+# settings.database_url is guaranteed non-None by the model_validator at startup
+assert settings.database_url is not None, "DATABASE_URL must be set before engine creation"
+
 engine = create_async_engine(
     settings.database_url,
     echo=settings.log_level == "DEBUG",
@@ -49,8 +52,8 @@ async def cleanup_old_logs(retention_days: int) -> None:
         return
     cutoff = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=retention_days)
     async with async_session() as session:
-        await session.execute(delete(RequestLog).where(RequestLog.timestamp < cutoff))
-        await session.execute(delete(GuardrailLog).where(GuardrailLog.timestamp < cutoff))
+        await session.execute(delete(RequestLog).where(RequestLog.timestamp < cutoff))  # type: ignore[arg-type]  # SQLAlchemy __lt__ returns ColumnElement, not bool
+        await session.execute(delete(GuardrailLog).where(GuardrailLog.timestamp < cutoff))  # type: ignore[arg-type]  # same
         await session.commit()
 
 

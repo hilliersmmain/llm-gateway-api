@@ -2,6 +2,7 @@
 
 import logging
 import re
+from datetime import UTC, datetime
 
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -53,6 +54,7 @@ async def save_guardrail_log(
             violation_type=violation_type,
             blocked_keyword=blocked_keyword,
             client_ip=hash_value(client_ip),
+            timestamp=datetime.now(UTC).replace(tzinfo=None),
         )
         session.add(log_entry)
         await session.commit()

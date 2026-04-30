@@ -1,8 +1,8 @@
 """Integration tests for API endpoints."""
 
-from fastapi import BackgroundTasks, HTTPException
 from unittest.mock import patch
 
+from fastapi import BackgroundTasks, HTTPException
 from fastapi.testclient import TestClient
 
 

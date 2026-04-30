@@ -7,6 +7,8 @@ gunicorn>=21.2.0
 sqlmodel>=0.0.22
 asyncpg>=0.30.0
 greenlet>=3.1.0
+alembic>=1.13.0
+psycopg2-binary>=2.9.0
 
 # Redis (optional, for distributed rate limiting)
 redis>=5.0.0

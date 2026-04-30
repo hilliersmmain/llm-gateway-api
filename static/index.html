@@ -16,12 +16,23 @@
     <link
       rel="stylesheet"
       href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+      integrity="sha384-iw3OoTErCYJJB9mCa8LNS2hbsQ7M3C0EpIsO/H5+EGAkPGc6rk+V8i04oW/K5xq0"
+      crossorigin="anonymous"
+      referrerpolicy="no-referrer"
     />
     <!-- Styles -->
     <link rel="stylesheet" href="style.css" />
     <!-- Markdown Parser -->
-    <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
+    <script
+      src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"
+      integrity="sha384-/TQbtLCAerC3jgaim+N78RZSDYV7ryeoBCVqTuzRrFec2akfBkHS7ACQ3PQhvMVi"
+      crossorigin="anonymous"
+    ></script>
+    <script
+      src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"
+      integrity="sha384-cwS6YdhLI7XS60eoDiC+egV0qHp8zI+Cms46R0nbn8JrmoAzV9uFL60etMZhAnSu"
+      crossorigin="anonymous"
+    ></script>
   </head>
   <body>
     <!-- Sidebar -->
@@ -64,7 +75,7 @@
         <h3 id="currentChatTitle" class="chat-title">New Conversation</h3>
       </div>
 
-      <div id="chat-container">
+      <div id="chat-container" role="log" aria-live="polite" aria-atomic="false" aria-label="Chat conversation">
         <!-- Messages will be injected by JavaScript -->
       </div>
 

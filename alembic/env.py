@@ -35,6 +35,18 @@ def get_url() -> str:
 def _compare_type(context, inspected_column, metadata_column, inspected_type, metadata_type):  # noqa: ANN001
     """Suppress false-positive schema drift between TEXT() and AutoString().
 
+    Alembic passes this callable to ``context.configure(compare_type=...)``
+    with the following arguments (matching Alembic's documented signature):
+
+    * context          – the Alembic MigrationContext
+    * inspected_column – the column as reflected from the *database*
+    * metadata_column  – the column as declared in the SQLModel *metadata*
+    * inspected_type   – the SQLAlchemy type from the database (e.g. ``Text()``)
+    * metadata_type    – the SQLAlchemy type from the model   (e.g. ``AutoString()``)
+
+    Return ``False`` to indicate "no change required", ``True`` to force a change,
+    or ``None`` to fall back to Alembic's built-in comparison.
+
     SQLModel maps plain ``str`` fields to ``AutoString`` (a ``String`` subclass
     without a length limit).  PostgreSQL stores both ``VARCHAR`` (without length)
     and ``TEXT`` identically, so there is no real difference.  Without this hook,

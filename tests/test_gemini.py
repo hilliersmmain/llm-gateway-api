@@ -246,12 +246,14 @@ class TestCallWithRetryBackoff:
 
             monkeypatch.setattr(gemini_module.asyncio, "wait_for", direct_wait_for)
 
-            with patch.object(service, "_call_with_retry", wraps=service._call_with_retry):
+            with (
+                patch.object(service, "_call_with_retry", wraps=service._call_with_retry),
+                patch("app.services.gemini.settings") as mock_settings,
+            ):
                 # Use 3 retry attempts so both sleeps occur
-                with patch("app.services.gemini.settings") as mock_settings:
-                    mock_settings.gemini_retry_attempts = 3
-                    mock_settings.gemini_timeout_seconds = 30
-                    result = await service._call_with_retry(flaky_call)
+                mock_settings.gemini_retry_attempts = 3
+                mock_settings.gemini_timeout_seconds = 30
+                result = await service._call_with_retry(flaky_call)
 
         assert result == "ok"
         assert len(sleep_calls) == 2

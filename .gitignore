@@ -65,3 +65,4 @@ screenshots-i-took-manually/
 # Debug/Development
 debug_*.py
 .playwright-mcp/
+_smoke_server.py

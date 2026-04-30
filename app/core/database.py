@@ -4,12 +4,12 @@ import asyncio
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime, timedelta
 
-from alembic import command as alembic_command
 from alembic.config import Config as AlembicConfig
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
+from alembic import command as alembic_command
 from app.core.config import get_settings
 from app.models.log import GuardrailLog, RequestLog
 

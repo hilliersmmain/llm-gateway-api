@@ -12,16 +12,15 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 from app.core.auth import require_admin_api_key
 from app.core.config import get_settings
 from app.core.database import cleanup_old_logs, init_db
+from app.core.logging_setup import configure_json_logging
 from app.middleware.rate_limit import RateLimitMiddleware, create_rate_limit_store
+from app.middleware.request_id import RequestIDMiddleware
 from app.routers import analytics, chat, health
 from app.services.guardrails import GuardrailError
 
-# Configure logging
+# Configure JSON structured logging
 settings = get_settings()
-logging.basicConfig(
-    level=getattr(logging, settings.log_level.upper()),
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
+configure_json_logging(level=getattr(logging, settings.log_level.upper()))
 logger = logging.getLogger(__name__)
 
 
@@ -118,6 +117,10 @@ app.add_middleware(
     max_requests=settings.rate_limit_requests,
     window_seconds=settings.rate_limit_window_seconds,
 )
+
+# RequestIDMiddleware must be added LAST so it is executed FIRST (outermost layer).
+# This ensures the request ID is available to all inner middleware and handlers.
+app.add_middleware(RequestIDMiddleware)
 
 
 @app.exception_handler(GuardrailError)

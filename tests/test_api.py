@@ -201,6 +201,28 @@ class TestOperationalEndpoints:
             assert "openapi" in response.json()
 
 
+class TestRequestID:
+    """Tests for X-Request-ID header propagation."""
+
+    def test_response_contains_request_id(self, client: TestClient):
+        """Server should add a non-empty X-Request-ID to every response."""
+        response = client.post("/chat", json={"message": "Hello"})
+        assert response.status_code == 200
+        request_id = response.headers.get("X-Request-ID", "")
+        assert request_id, "X-Request-ID header should be present and non-empty"
+
+    def test_custom_request_id_is_echoed(self, client: TestClient):
+        """Server should echo back a client-supplied X-Request-ID unchanged."""
+        custom_id = "my-custom-id"
+        response = client.post(
+            "/chat",
+            json={"message": "Hello"},
+            headers={"X-Request-ID": custom_id},
+        )
+        assert response.status_code == 200
+        assert response.headers.get("X-Request-ID") == custom_id
+
+
 class TestChatErrorLatency:
     """Tests for non-streaming chat error logging latency."""
 

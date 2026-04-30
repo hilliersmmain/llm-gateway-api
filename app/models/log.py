@@ -16,7 +16,7 @@ class RequestLog(SQLModel, table=True):
     latency_ms: float
     tokens_in: int = Field(default=0)
     tokens_out: int = Field(default=0)
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC).replace(tzinfo=None))
     status: str = Field(default="success")
     error_message: str | None = Field(default=None)
 
@@ -35,7 +35,7 @@ class GuardrailLog(SQLModel, table=True):
         ..., description="Type: blocked_content, length_exceeded"
     )
     timestamp: datetime = Field(
-        default_factory=lambda: datetime.now(UTC),
+        default_factory=lambda: datetime.now(UTC).replace(tzinfo=None),
         description="Violation timestamp",
     )
     client_ip: str | None = Field(default=None, description="Client IP address")

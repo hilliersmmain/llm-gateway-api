@@ -1,8 +1,13 @@
 """Application configuration using pydantic-settings."""
 
+import logging
+import secrets
 from functools import lru_cache
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+logger = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
@@ -12,7 +17,10 @@ class Settings(BaseSettings):
     gemini_api_key: str
 
     # Database Configuration
-    database_url: str = "postgresql+asyncpg://user:change_me@localhost:5432/llm_gateway"
+    # No default: must be supplied. In development the validator falls back
+    # to a localhost dev URL with an obvious placeholder password; production
+    # deployments must set DATABASE_URL explicitly or startup fails.
+    database_url: str | None = None
 
     # Logging Configuration
     log_level: str = "INFO"
@@ -47,7 +55,9 @@ class Settings(BaseSettings):
 
     # Privacy and retention
     log_raw_content: bool = False
-    hash_salt: str = "llm-gateway-default-salt"
+    # No default: required outside development. In development the validator
+    # generates a random per-process salt and logs a warning.
+    hash_salt: str | None = None
     log_retention_days: int = 30
 
     # Gemini Pricing (per 1M tokens) for cost estimation
@@ -59,6 +69,39 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         case_sensitive=False,
     )
+
+    @model_validator(mode="after")
+    def _enforce_required_in_production(self) -> "Settings":
+        is_dev = self.environment.lower() == "development"
+
+        if not self.database_url:
+            if is_dev:
+                self.database_url = (
+                    "postgresql+asyncpg://user:change_me@localhost:5432/llm_gateway"
+                )
+                logger.warning(
+                    "DATABASE_URL not set; using development placeholder. "
+                    "Set DATABASE_URL explicitly outside development."
+                )
+            else:
+                raise ValueError(
+                    "DATABASE_URL is required when ENVIRONMENT is not 'development'."
+                )
+
+        if not self.hash_salt:
+            if is_dev:
+                self.hash_salt = secrets.token_urlsafe(32)
+                logger.warning(
+                    "HASH_SALT not set; generated a random per-process salt for development. "
+                    "IP hashes will not be stable across restarts. "
+                    "Set HASH_SALT explicitly outside development."
+                )
+            else:
+                raise ValueError(
+                    "HASH_SALT is required when ENVIRONMENT is not 'development'."
+                )
+
+        return self
 
 
 @lru_cache

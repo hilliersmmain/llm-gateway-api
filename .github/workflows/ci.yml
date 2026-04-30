@@ -47,3 +47,13 @@ jobs:
         run: ruff check .
       - name: Type check
         run: mypy app
+      - name: Apply migrations
+        env:
+          DATABASE_URL: postgresql+asyncpg://user:password@localhost:5432/llm_gateway
+          GEMINI_API_KEY: test_key
+        run: alembic upgrade head
+      - name: Check for schema drift
+        env:
+          DATABASE_URL: postgresql+asyncpg://user:password@localhost:5432/llm_gateway
+          GEMINI_API_KEY: test_key
+        run: alembic check

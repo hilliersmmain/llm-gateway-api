@@ -1,12 +1,14 @@
 """Async database configuration with SQLModel."""
 
+import asyncio
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime, timedelta
 
+from alembic import command as alembic_command
+from alembic.config import Config as AlembicConfig
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
-from sqlmodel import SQLModel
 
 from app.core.config import get_settings
 from app.models.log import GuardrailLog, RequestLog
@@ -30,9 +32,15 @@ async_session = sessionmaker(
 )
 
 
+def _run_alembic_upgrade() -> None:
+    """Run 'alembic upgrade head' synchronously (called via asyncio.to_thread)."""
+    alembic_cfg = AlembicConfig("alembic.ini")
+    alembic_command.upgrade(alembic_cfg, "head")
+
+
 async def init_db() -> None:
-    async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+    """Apply all pending Alembic migrations to bring the schema up to head."""
+    await asyncio.to_thread(_run_alembic_upgrade)
 
 
 async def cleanup_old_logs(retention_days: int) -> None:

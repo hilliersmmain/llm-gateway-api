@@ -1,6 +1,7 @@
 """Async database configuration with SQLModel."""
 
 import asyncio
+import os
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime, timedelta
 
@@ -8,6 +9,7 @@ from alembic.config import Config as AlembicConfig
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import NullPool
 
 from alembic import command as alembic_command
 from app.core.config import get_settings
@@ -18,15 +20,29 @@ settings = get_settings()
 # settings.database_url is guaranteed non-None by the model_validator at startup
 assert settings.database_url is not None, "DATABASE_URL must be set before engine creation"
 
-engine = create_async_engine(
-    settings.database_url,
-    echo=settings.log_level == "DEBUG",
-    future=True,
-    pool_size=10,
-    max_overflow=20,
-    pool_pre_ping=True,
-    pool_recycle=1800,
-)
+# When DB_POOL_DISABLED=1, use NullPool so asyncpg connections are never cached
+# across event loops. This is required in tests where pytest-asyncio and
+# Starlette's TestClient each run the app in their own asyncio loop — a pooled
+# connection bound to one loop will raise RuntimeError in the other.
+_pool_disabled = os.getenv("DB_POOL_DISABLED", "").lower() in ("1", "true", "yes")
+
+if _pool_disabled:
+    engine = create_async_engine(
+        settings.database_url,
+        echo=settings.log_level == "DEBUG",
+        future=True,
+        poolclass=NullPool,
+    )
+else:
+    engine = create_async_engine(
+        settings.database_url,
+        echo=settings.log_level == "DEBUG",
+        future=True,
+        pool_size=10,
+        max_overflow=20,
+        pool_pre_ping=True,
+        pool_recycle=1800,
+    )
 
 async_session = sessionmaker(
     engine,

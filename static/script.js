@@ -224,12 +224,26 @@ document.addEventListener('DOMContentLoaded', () => {
         sortedChats.forEach(chat => {
             const div = document.createElement('div');
             div.className = `history-item ${chat.id === currentChatId ? 'active' : ''}`;
-            div.dataset.id = chat.id; // Store ID for delegation
-            div.innerHTML = `
-                <span><i class="far fa-message" style="margin-right: 8px; opacity: 0.7;"></i>${chat.title}</span>
-                <button class="delete-chat-btn" data-id="${chat.id}"><i class="fas fa-trash" style="pointer-events: none;"></i></button>
-            `;
-            // No individual listeners attached here anymore!
+            div.dataset.id = chat.id;
+
+            const span = document.createElement('span');
+            const icon = document.createElement('i');
+            icon.className = 'far fa-message';
+            icon.style.marginRight = '8px';
+            icon.style.opacity = '0.7';
+            span.appendChild(icon);
+            span.appendChild(document.createTextNode(chat.title));
+
+            const btn = document.createElement('button');
+            btn.className = 'delete-chat-btn';
+            btn.dataset.id = chat.id;
+            const trash = document.createElement('i');
+            trash.className = 'fas fa-trash';
+            trash.style.pointerEvents = 'none';
+            btn.appendChild(trash);
+
+            div.appendChild(span);
+            div.appendChild(btn);
             historyList.appendChild(div);
         });
     }

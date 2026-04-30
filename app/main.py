@@ -59,6 +59,21 @@ async def custom_swagger_ui_html():
 
 
 # Security headers middleware
+# Moderate CSP v1: allowlists the three CDNs the app actually pulls from.
+# 'unsafe-inline' on script-src is needed because the analytics dashboard inlines
+# its Chart.js bootstrap. A nonce-based tightening is a follow-up.
+CSP_POLICY = (
+    "default-src 'self'; "
+    "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://unpkg.com; "
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com https://unpkg.com; "
+    "font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com; "
+    "img-src 'self' data:; "
+    "connect-src 'self'; "
+    "frame-ancestors 'none'; "
+    "base-uri 'self'"
+)
+
+
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         response = await call_next(request)
@@ -66,6 +81,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Permissions-Policy"] = "geolocation=(), camera=(), microphone=()"
+        response.headers["Content-Security-Policy"] = CSP_POLICY
         return response
 
 

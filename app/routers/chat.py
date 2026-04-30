@@ -38,10 +38,10 @@ async def chat(
     chat_request: ChatRequest,
     request: Request,
     background_tasks: BackgroundTasks,
-    session: AsyncSession = Depends(get_session),
-    guardrails: GuardrailsService = Depends(get_guardrails_service),
-    gemini: GeminiService = Depends(get_gemini_service),
-    _: None = Depends(require_api_key),
+    session: AsyncSession = Depends(get_session),  # noqa: B008
+    guardrails: GuardrailsService = Depends(get_guardrails_service),  # noqa: B008
+    gemini: GeminiService = Depends(get_gemini_service),  # noqa: B008
+    _: None = Depends(require_api_key),  # noqa: B008
 ):
     """Process a chat request through guardrails and Gemini."""
     client_ip = get_client_ip(request)
@@ -105,10 +105,10 @@ async def chat_stream(
     chat_request: ChatRequest,
     request: Request,
     background_tasks: BackgroundTasks,
-    session: AsyncSession = Depends(get_session),
-    guardrails: GuardrailsService = Depends(get_guardrails_service),
-    gemini: GeminiService = Depends(get_gemini_service),
-    _: None = Depends(require_api_key),
+    session: AsyncSession = Depends(get_session),  # noqa: B008
+    guardrails: GuardrailsService = Depends(get_guardrails_service),  # noqa: B008
+    gemini: GeminiService = Depends(get_gemini_service),  # noqa: B008
+    _: None = Depends(require_api_key),  # noqa: B008
 ):
     """Process a chat request with streaming response."""
     client_ip = get_client_ip(request)

@@ -72,11 +72,13 @@ def client(mock_db_session, mock_gemini):
     app.dependency_overrides[get_gemini_service] = lambda: mock_gemini
     
     # Mock init_db to prevent real DB connection during startup
-    with unittest.mock.patch("app.main.init_db", new_callable=AsyncMock):
-        with TestClient(app) as test_client:
-            # Set random IP to bypass rate limiting between tests
-            test_client.headers["X-Forwarded-For"] = f"10.0.0.{random.randint(1, 254)}"
-            yield test_client
+    with (
+        unittest.mock.patch("app.main.init_db", new_callable=AsyncMock),
+        TestClient(app) as test_client,
+    ):
+        # Set random IP to bypass rate limiting between tests
+        test_client.headers["X-Forwarded-For"] = f"10.0.0.{random.randint(1, 254)}"
+        yield test_client
     
     # Clean up overrides after test
     app.dependency_overrides.clear()

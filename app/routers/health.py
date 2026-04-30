@@ -15,7 +15,7 @@ router = APIRouter(tags=["Health"])
     response_model=HealthResponse,
     summary="Health check endpoint",
 )
-async def health_check(session: AsyncSession = Depends(get_session)):
+async def health_check(session: AsyncSession = Depends(get_session)):  # noqa: B008
     """Check API + database health status."""
     try:
         await session.execute(text("SELECT 1"))

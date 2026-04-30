@@ -31,8 +31,8 @@ router = APIRouter(tags=["Analytics"])
     summary="Get API usage metrics",
 )
 async def get_metrics(
-    session: AsyncSession = Depends(get_session),
-    _: None = Depends(require_admin_api_key),
+    session: AsyncSession = Depends(get_session),  # noqa: B008
+    _: None = Depends(require_admin_api_key),  # noqa: B008
 ):
     """Get API usage metrics for today."""
     today_start = datetime.combine(date.today(), datetime.min.time())
@@ -63,9 +63,9 @@ async def get_metrics(
     summary="Get detailed analytics",
 )
 async def get_analytics(
-    format: str | None = Query(None, description="Response format: 'json' or 'html'"),
-    session: AsyncSession = Depends(get_session),
-    _: None = Depends(require_admin_api_key),
+    format: str | None = Query(None, description="Response format: 'json' or 'html'"),  # noqa: B008
+    session: AsyncSession = Depends(get_session),  # noqa: B008
+    _: None = Depends(require_admin_api_key),  # noqa: B008
 ):
     """Get detailed analytics for the API."""
     now = datetime.now()

@@ -102,13 +102,13 @@ class GeminiService:
                 raise HTTPException(
                     status_code=429,
                     detail="Gemini quota exceeded. Please try again later.",
-                )
+                ) from e
 
             logger.error("Gemini streaming API error: %s", type(e).__name__)
             raise HTTPException(
                 status_code=502,
                 detail="Failed to get response from LLM service. Please try again later.",
-            )
+            ) from e
 
     async def generate_response(self, message: str) -> tuple[str, dict]:
         """
@@ -159,13 +159,13 @@ class GeminiService:
                 logger.warning("Gemini quota exceeded")
                 raise HTTPException(
                     status_code=429,
-                    detail="Gemini quota exceeded. Please try again later."
-                )
+                    detail="Gemini quota exceeded. Please try again later.",
+                ) from e
             logger.error("Gemini API error: %s", type(e).__name__)
             raise HTTPException(
                 status_code=502,
                 detail="Failed to get response from LLM service. Please try again later.",
-            )
+            ) from e
 
 
 # Singleton instance

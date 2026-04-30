@@ -1,24 +1,24 @@
 # Core Framework
-fastapi[standard]>=0.115.0
-uvicorn[standard]>=0.32.0
-gunicorn>=21.2.0
+fastapi[standard]==0.136.1
+uvicorn[standard]==0.46.0
+gunicorn==25.3.0
 
 # Database
-sqlmodel>=0.0.22
-asyncpg>=0.30.0
-greenlet>=3.1.0
-alembic>=1.13.0
-psycopg2-binary>=2.9.0
+sqlmodel==0.0.38
+asyncpg==0.31.0
+greenlet==3.4.0
+alembic==1.18.4
+psycopg2-binary==2.9.12
 
 # Redis (optional, for distributed rate limiting)
-redis>=5.0.0
+redis==7.4.0
 
 # Google Gemini SDK
-google-genai>=1.0.0
+google-genai==1.73.1
 
 # Configuration
-pydantic-settings>=2.6.0
-python-dotenv>=1.0.1
+pydantic-settings==2.14.0
+python-dotenv==1.2.2
 
 # Runtime HTTP client dependency for FastAPI test client compatibility
-httpx>=0.28.0
+httpx==0.28.1

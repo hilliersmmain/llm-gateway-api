@@ -47,6 +47,9 @@ jobs:
         run: ruff check .
       - name: Type check
         run: mypy app
+      - name: Security audit
+        run: pip install pip-audit && pip-audit -r requirements.txt --strict
+        continue-on-error: true
       - name: Apply migrations
         env:
           DATABASE_URL: postgresql+asyncpg://user:password@localhost:5432/llm_gateway

@@ -155,7 +155,7 @@ too, and has its own prompt file.
 
 Update `README.md` and `CONTRIBUTING.md` if the fix changes what a new contributor should
 do. Update the `CLAUDE.md` "Known broken" entry to say it is fixed — that is a rewrite of an
-existing section, so show Sam the diff rather than applying it silently.
+existing section, so show the maintainer the diff rather than applying it silently.
 
 Commit locally on `main` with a heredoc-quoted message, `git add` named paths only, and end
 the message with:
@@ -165,7 +165,7 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
 ```
 
 **Do not push.** `hilliersmmain/llm-gateway-api` is public and a resume repo; pushing is
-outward-facing and needs Sam's say-so. Ask, and let him decide.
+outward-facing and needs the maintainer's say-so. Ask, and let them decide.
 
 When it is done, `git mv Prompts/fix-env-example-db-pool-disabled.md Prompts/Archived/` as
 part of finishing, and run `/wrap`.

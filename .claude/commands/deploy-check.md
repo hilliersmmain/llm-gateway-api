@@ -1,5 +1,5 @@
 Report on this project's deployment readiness. **This is a read-only check — report
-findings, do not fix them.** If something is broken, say so and stop; Sam decides what
+findings, do not fix them.** If something is broken, say so and stop; the maintainer decides what
 gets changed.
 
 Run these, from the repo root, and quote the real output of each:

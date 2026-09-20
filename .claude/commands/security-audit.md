@@ -1,5 +1,5 @@
 Perform a security audit of this codebase. **Report findings only — do not fix them, and do
-not commit.** Sam decides what gets changed; an audit that also edits is two jobs, and the
+not commit.** The maintainer decides what gets changed; an audit that also edits is two jobs, and the
 second one was not asked for.
 
 Check for:
@@ -29,5 +29,5 @@ Check for:
 For each finding report: **Severity** (Critical / High / Medium / Low / Info), **Location**
 as `file:line`, **Description**, and a **concrete fix** — written out, not applied.
 
-Present the findings as a table and stop. If Sam wants something fixed he will say so, and
+Present the findings as a table and stop. If the maintainer wants something fixed they will say so, and
 it becomes its own job in `Prompts/`.

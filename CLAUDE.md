@@ -1,9 +1,8 @@
 # CLAUDE.md — llm-gateway-api
 
-Project rules only. **This file deliberately does not repeat `~/.claude/CLAUDE.md`** — that
-file owns the machine, Sam, the safety limits and the toolchain conventions (rootless
-podman, fully-qualified image names, `uv` or a venv, never `sudo pip`). `~/CLAUDE.md` owns
-the contract every CLAUDE.md on this box obeys. This one owns only this project.
+Project rules only. This file deliberately does not repeat the machine-level conventions
+(rootless podman, fully-qualified image names, `uv` or a venv, never `sudo pip`) that the
+developer's global instruction file owns. This one owns only this project.
 
 ---
 
@@ -20,23 +19,22 @@ privacy-aware request logging to PostgreSQL, and an analytics dashboard.
 2026-09-20, branch `main`.
 
 **It is NOT archived on GitHub** — verified 2026-09-20, `gh repo view --json isArchived`
-→ `false`; also public, MIT. Sam believed it was archived. Re-check if it matters.
+→ `false`; also public, MIT. Re-check if it matters.
 
-**Pushing is outward-facing and needs Sam's say-so.** Commit locally on `main`; never
-`git push` unasked. This is the repo a hiring manager reads.
+**Pushing is outward-facing and needs the maintainer's say-so.** Commit locally on `main`;
+never `git push` unasked.
 
 ## How work is done here
 
-- **Large plan-mode plans, not `/goal`.** The goal cycle was retired machine-wide
-  2026-09-09; the history is `~/.claude/reference/goal-cycle.md`. Nothing in this repo
-  should reintroduce a self-improvement loop.
-- **`Prompts/` holds the queued jobs** — one runnable job per file, prompt text only (no
-  launch command, no status table, no notes: Sam select-alls and pastes). A finished one is
-  `git mv`'d to `Prompts/Archived/`, never deleted.
+- **Large plan-mode plans, not self-improvement loops.** Nothing in this repo should
+  reintroduce an agent that edits and commits on its own initiative.
+- **`Prompts/` holds the queued jobs** — one runnable job per file, prompt text only: no
+  launch command, no status table, no notes. A finished one is `git mv`'d to
+  `Prompts/Archived/`.
 - **`/wrap` unasked** at the end of a substantive session, before compacting.
 - **`/code-review xhigh app/`** after a long coding session — `xhigh`, not `max`. Budget
   ~30 minutes and ~350k subagent tokens, and say so before launching.
-- **Subagents run on sonnet** unless Sam calls the session heavy.
+- **Subagents run on a cheaper model** unless the session is explicitly called heavy.
 - **`context7` is the doc source** for FastAPI, SQLModel, Alembic, pydantic-settings and
   the Gemini SDK — the pinned versions in `requirements.txt` are recent, so guessing an API
   from memory is the failure mode here.
@@ -79,7 +77,7 @@ podman stop llm-gateway-db                                      # when done
 ```
 
 Why it is written that way: rootless `podman` and fully-qualified image names are house
-convention (`~/.claude/CLAUDE.md`), and the `docker.io` *package* is sudo-only on this box.
+convention on this machine, and the `docker.io` *package* is sudo-only here.
 The `127.0.0.1:` prefix binds the published port to loopback explicitly, so the database is
 never reachable off-machine even if a firewall rule changes — that is deliberate under this
 machine's threat model, not decoration. `docker-compose.yml` still exists and is the
@@ -264,18 +262,18 @@ don't create either without asking.
 
 `/improve` and `/polish-loop` were **deleted 2026-09-20**: both were artefacts of the retired
 `/goal` self-improvement loop, and both instructed a session to edit this CLAUDE.md and
-commit unprompted, which the contract in `~/CLAUDE.md` forbids. `/polish-loop` also required
-Playwright MCP, which is not enabled here — read `~/.claude/settings.json` rather than
-trusting this line. Plan-mode plans, `/code-review xhigh` and `/wrap` replace them.
+commit unprompted, which this machine's instruction-file contract forbids. `/polish-loop`
+also required Playwright MCP, which is not enabled here — read the local settings rather
+than trusting this line. Plan-mode plans, `/code-review xhigh` and `/wrap` replace them.
 
 ## Maintenance
 
-The contract for this file lives in `~/CLAUDE.md`, which loads in every session under the
-home directory: **nothing appends to a CLAUDE.md automatically**, rewriting one is a
-separate approval from Sam, rules live here while stories live in `~/.claude/reference/` or
-the memory store, and a line states a stable fact or a pointer rather than a volatile value.
+The contract for this file lives in the developer's global instruction file: **nothing
+appends to a CLAUDE.md automatically**, rewriting one is a separate approval, rules live
+here while stories live in the reference files or the memory store, and a line states a
+stable fact or a pointer rather than a volatile value.
 
 When a change makes a section above misleading, raise it as a numbered diff at `/wrap` and
-let Sam decide. **Do not silently rewrite this file in the same commit as a code change** —
+let the maintainer decide. **Do not silently rewrite this file in the same commit as a code change** —
 that is what the old "Self-Modification Rules" section told sessions to do, and it claimed a
 looser rule than the contract allows. Removed 2026-09-20.

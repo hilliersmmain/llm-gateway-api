@@ -92,8 +92,8 @@ DATABASE_URL=postgresql+asyncpg://user:password@localhost:5432/llm_gateway
 GEMINI_API_KEY=test_key
 ```
 
-**`cp .env.example .env` does NOT work today** — see "Known broken" below. `.env` is
-gitignored and must exist: `Settings` sets `env_file=".env"` (`app/core/config.py:68`).
+`.env` is gitignored and must exist: `Settings` sets `env_file=".env"` (`app/core/config.py:68`).
+`cp .env.example .env` works as of 2026-09-20 — fixed, see "Known broken" below.
 
 ### Migrations, tests, lint, types
 
@@ -159,32 +159,13 @@ Volatile numbers, dated on purpose. The stable facts are that the coverage gate 
 
 ## Known broken — pre-existing, deliberately not fixed
 
-Both are queued as `Prompts/` jobs. Neither was caused by a recent session; a session that
-trips over one has not broken anything.
+One is fixed; the other is queued as a `Prompts/` job. Neither was caused by a recent
+session; a session that trips over the remaining one has not broken anything.
 
-**1. `.env.example:47` makes a fresh `.env` fatal.** `cp .env.example .env` and the app
-refuses to start:
-
-```
-pydantic_core._pydantic_core.ValidationError: 1 validation error for Settings
-db_pool_disabled
-  Extra inputs are not permitted [type=extra_forbidden, input_value='0', input_type=str]
-```
-
-`DB_POOL_DISABLED` is not a `Settings` field — it is read by `os.getenv` at
-`app/core/database.py:27`. `Settings` inherits pydantic-settings' `BaseSettings` default of
-`extra="forbid"` (nothing in `app/core/config.py:67-71` sets `extra` either way), and the
-dotenv source feeds it *every* key in the file. So an unknown key in `.env` is fatal while
-the same key as a process env var is harmless. CI passes it as a workflow env var
-(`.github/workflows/ci.yml:50`), which is why CI never caught it. All 24 `Settings` fields
-were compared against `.env.example` on 2026-09-20; `DB_POOL_DISABLED` is the only offender.
-`README.md:87` and `CONTRIBUTING.md:9` both tell a new contributor to run `cp .env.example
-.env`, so this hits every clone. Fix queued:
-`Prompts/fix-env-example-db-pool-disabled.md`.
-
-Second, smaller reason not to copy it verbatim: `.env.example:6` points `DATABASE_URL` at
-host `db` with password `change_me`, which is the docker-compose shape, not the local
-podman one.
+**1. FIXED 2026-09-20.** `.env.example:47` set `DB_POOL_DISABLED=0`, an unknown `Settings`
+key that made a fresh `.env` fatal. The assignment is removed; the comment above it says
+where the variable belongs. Story: `Prompts/Archived/fix-env-example-db-pool-disabled.md`.
+`.env.example:6` still carries the docker-compose `DATABASE_URL`; that was out of scope.
 
 **2. `alembic check` FAILS, and it fails on GitHub too.** Not a local artefact. GitHub
 Actions run `25161331154` on `main` (2026-04-30, the merge of PR #8) failed on exactly one

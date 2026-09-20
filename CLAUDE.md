@@ -157,24 +157,23 @@ Volatile numbers, dated on purpose. The stable facts are that the coverage gate 
 
 ---
 
-## Known broken — pre-existing, deliberately not fixed
+## Known broken — pre-existing, both now fixed
 
-One is fixed; the other is queued as a `Prompts/` job. Neither was caused by a recent
-session; a session that trips over the remaining one has not broken anything.
+Both are fixed as of 2026-09-20. Neither was caused by a recent session; they are kept here
+as a record of what was wrong and where the story lives.
 
 **1. FIXED 2026-09-20.** `.env.example:47` set `DB_POOL_DISABLED=0`, an unknown `Settings`
 key that made a fresh `.env` fatal. The assignment is removed; the comment above it says
 where the variable belongs. Story: `Prompts/Archived/fix-env-example-db-pool-disabled.md`.
 `.env.example:6` still carries the docker-compose `DATABASE_URL`; that was out of scope.
 
-**2. `alembic check` FAILS, and it fails on GitHub too.** Not a local artefact. GitHub
-Actions run `25161331154` on `main` (2026-04-30, the merge of PR #8) failed on exactly one
-step, `Check for schema drift`; everything else in that run passed. Locally it reports 8
-columns drifting `TEXT()` → `AutoString()` across `guardrail_logs` and `request_logs`: the
-migration at `alembic/versions/0001_initial_schema.py:26-44` declares `sa.Text()` while the
-SQLModel models in `app/models/log.py` resolve to SQLModel's `AutoString`. Pinned versions
-are installed exactly as `requirements.txt` specifies (sqlmodel 0.0.38, alembic 1.18.4).
-Verified 2026-09-20. Fix queued: `Prompts/fix-alembic-check-schema-drift.md`.
+**2. FIXED 2026-09-20.** `alembic check` reported 8 columns drifting `TEXT()` →
+`AutoString()` across `guardrail_logs` and `request_logs`: the migration declared
+`sa.Text()` while the plain-`str` SQLModel fields resolved to SQLModel's `AutoString`. It
+was red on GitHub too (Actions run `25161331154` on `main`, step `Check for schema drift`).
+The eight fields in `app/models/log.py` now carry `Field(sa_type=Text)`, so the models match
+the migration and the live schema; no DDL and no second migration. Proved green from an
+empty database. Story: `git log -1 --grep 'alembic check'`.
 
 ---
 
@@ -252,7 +251,8 @@ asyncio loops — **process environment only, never in `.env`**. See `.env.examp
 - **Heroku:** `Procfile` + `runtime.txt` (Python 3.12.3, Gunicorn + Uvicorn workers)
 - **CI** (`.github/workflows/ci.yml`): migrations → pytest with the coverage threshold →
   Ruff lint → mypy → `pip-audit` (`continue-on-error: true`, so it never blocks) →
-  `alembic check`. That last step is the one that is currently red — see "Known broken".
+  `alembic check`. That last step was the red one; fixed locally 2026-09-20 (see "Known
+  broken"), but GitHub stays red until the fix is pushed.
 
 ## Custom slash commands
 

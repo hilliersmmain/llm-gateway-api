@@ -45,14 +45,15 @@ async def chat(
 ):
     """Process a chat request through guardrails and Gemini."""
     client_ip = get_client_ip(request)
-    request_start = time.perf_counter()
 
+    # The error paths await their log writes instead of queueing them:
+    # FastAPI only runs BackgroundTasks for a response the endpoint returns,
+    # so a task queued before a raise is silently dropped.
     with RequestTimer() as timer:
         try:
             guardrails.validate(chat_request.message)
         except GuardrailError as e:
-            background_tasks.add_task(
-                save_guardrail_log,
+            await save_guardrail_log(
                 session=session,
                 input_prompt=chat_request.message,
                 violation_type=e.error_type,
@@ -64,12 +65,11 @@ async def chat(
         try:
             response_text, token_usage = await gemini.generate_response(chat_request.message)
         except HTTPException as e:
-            background_tasks.add_task(
-                save_request_log,
+            await save_request_log(
                 session=session,
                 input_prompt=chat_request.message,
                 output_response="",
-                latency_ms=(time.perf_counter() - request_start) * 1000,
+                latency_ms=(time.perf_counter() - timer.start_time) * 1000,
                 tokens_in=0,
                 tokens_out=0,
                 status="error",

@@ -1,5 +1,6 @@
 """Tests for JsonLogFormatter, configure_json_logging, and RequestIDMiddleware."""
 
+import io
 import json
 import logging
 
@@ -7,6 +8,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from alembic import command as alembic_command
+from app.core import database
 from app.core.logging_setup import JsonLogFormatter, configure_json_logging
 from app.middleware.request_id import RequestIDMiddleware, request_id_var
 
@@ -88,6 +91,36 @@ class TestConfigureJsonLogging:
             for h in original_handlers:
                 root.addHandler(h)
 
+
+
+class TestInProcessMigrationsKeepAppLogging:
+    """init_db runs Alembic inside the app; that must not reconfigure logging."""
+
+    def test_upgrade_leaves_app_loggers_and_json_handler_alone(self):
+        root = logging.getLogger()
+        original_handlers = root.handlers[:]
+        original_level = root.level
+        app_logger = logging.getLogger("app.routers.chat")
+        try:
+            configure_json_logging(level=logging.INFO)
+            json_handler = root.handlers[-1]
+            assert not app_logger.disabled
+
+            # Offline mode (sql=True) runs alembic/env.py without a database.
+            buffer = io.StringIO()
+            alembic_command.upgrade(database._alembic_config(output_buffer=buffer), "head", sql=True)
+
+            assert "CREATE TABLE" in buffer.getvalue(), "env.py did not run the migrations"
+            assert not app_logger.disabled
+            assert root.level == logging.INFO
+            assert json_handler in root.handlers
+            assert isinstance(json_handler.formatter, JsonLogFormatter)
+        finally:
+            app_logger.disabled = False
+            root.setLevel(original_level)
+            root.handlers.clear()
+            for h in original_handlers:
+                root.addHandler(h)
 
 class TestRequestIDMiddleware:
     """Tests for RequestIDMiddleware via a minimal FastAPI app."""

@@ -4,6 +4,8 @@ import asyncio
 import os
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from typing import TextIO
 
 from alembic.config import Config as AlembicConfig
 from sqlalchemy import delete
@@ -51,10 +53,25 @@ async_session = sessionmaker(
 )
 
 
+_ALEMBIC_DIR = Path(__file__).resolve().parents[2] / "alembic"
+
+
+def _alembic_config(output_buffer: TextIO | None = None) -> AlembicConfig:
+    """Alembic config for running migrations inside the app process.
+
+    Built without alembic.ini on purpose: alembic/env.py calls
+    logging.config.fileConfig() only when a config file is named, and that call
+    disables every existing app logger and replaces the JSON log handler.
+    """
+    alembic_cfg = AlembicConfig(output_buffer=output_buffer)
+    alembic_cfg.set_main_option("script_location", str(_ALEMBIC_DIR))
+    alembic_cfg.set_main_option("path_separator", "os")
+    return alembic_cfg
+
+
 def _run_alembic_upgrade() -> None:
     """Run 'alembic upgrade head' synchronously (called via asyncio.to_thread)."""
-    alembic_cfg = AlembicConfig("alembic.ini")
-    alembic_command.upgrade(alembic_cfg, "head")
+    alembic_command.upgrade(_alembic_config(), "head")
 
 
 async def init_db() -> None:

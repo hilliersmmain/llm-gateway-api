@@ -1,7 +1,7 @@
 """Analytics and metrics router."""
 
 import json
-from datetime import date, datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import HTMLResponse
@@ -24,6 +24,11 @@ settings = get_settings()
 router = APIRouter(tags=["Analytics"])
 
 
+def _utc_now() -> datetime:
+    """Naive UTC now, matching how RequestLog and GuardrailLog timestamps are stored."""
+    return datetime.now(UTC).replace(tzinfo=None)
+
+
 @router.get(
     "/metrics",
     response_model=MetricsResponse,
@@ -35,7 +40,7 @@ async def get_metrics(
     _: None = Depends(require_admin_api_key),  # noqa: B008
 ):
     """Get API usage metrics for today."""
-    today_start = datetime.combine(date.today(), datetime.min.time())
+    today_start = _utc_now().replace(hour=0, minute=0, second=0, microsecond=0)
 
     query = select(
         func.count().label("total_requests"),
@@ -68,7 +73,7 @@ async def get_analytics(
     _: None = Depends(require_admin_api_key),  # noqa: B008
 ):
     """Get detailed analytics for the API."""
-    now = datetime.now()
+    now = _utc_now()
     time_24h_ago = now - timedelta(hours=24)
     time_7d_ago = now - timedelta(days=7)
 

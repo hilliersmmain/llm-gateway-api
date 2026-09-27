@@ -8,13 +8,26 @@ from collections.abc import AsyncGenerator
 
 from fastapi import HTTPException
 from google import genai
-from google.api_core import exceptions as google_exceptions
+from google.genai import errors as genai_errors
 from google.genai import types
 
 from app.core.config import get_settings
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
+
+
+def _is_quota_error(error: Exception) -> bool:
+    """google-genai reports quota exhaustion as an APIError with code 429."""
+    return isinstance(error, genai_errors.APIError) and error.code == 429
+
+
+async def _next_chunk(iterator):
+    """Return the stream's next chunk, or None once it is exhausted."""
+    try:
+        return await iterator.__anext__()
+    except StopAsyncIteration:
+        return None
 
 
 class GeminiService:
@@ -35,7 +48,8 @@ class GeminiService:
                 return await asyncio.wait_for(call(), timeout=settings.gemini_timeout_seconds)
             except Exception as e:  # pragma: no cover - unified retry path
                 last_error = e
-                if isinstance(e, google_exceptions.ResourceExhausted):
+                # 4xx (including 429 quota) will not succeed on a retry.
+                if isinstance(e, genai_errors.ClientError):
                     raise
                 if attempt >= attempts:
                     raise
@@ -63,8 +77,12 @@ class GeminiService:
         logger.info(f"Starting streaming request to Gemini model: {self.model}")
 
         try:
+            # The HTTP request only fires when the stream is first iterated, so
+            # opening the stream and reading its first chunk is what gets the
+            # timeout and retries. Nothing has reached the client yet, so a retry
+            # here is safe; once a chunk is yielded, the stream is never retried.
             async def stream_call():
-                return await self.client.aio.models.generate_content_stream(
+                stream = await self.client.aio.models.generate_content_stream(
                     model=self.model,
                     contents=message,
                     config=types.GenerateContentConfig(
@@ -72,12 +90,14 @@ class GeminiService:
                         max_output_tokens=2048,
                     ),
                 )
+                iterator = aiter(stream)
+                return iterator, await _next_chunk(iterator)
 
-            response_stream = await self._call_with_retry(stream_call)
+            iterator, chunk = await self._call_with_retry(stream_call)
 
             token_usage = {"input_tokens": 0, "output_tokens": 0}
 
-            async for chunk in response_stream:
+            while chunk is not None:
                 # Extract text from chunk
                 chunk_text = chunk.text if chunk.text else ""
 
@@ -92,12 +112,18 @@ class GeminiService:
                 if chunk_text:
                     yield chunk_text, None
 
+                # Each later chunk gets the same timeout, so a stalled stream
+                # cannot hold the connection open indefinitely.
+                chunk = await asyncio.wait_for(
+                    _next_chunk(iterator), timeout=settings.gemini_timeout_seconds
+                )
+
             # Yield final empty chunk with token usage
             yield "", token_usage
             logger.info(f"Streaming complete. Tokens: {token_usage}")
 
         except Exception as e:
-            if isinstance(e, google_exceptions.ResourceExhausted):
+            if _is_quota_error(e):
                 logger.warning("Gemini quota exceeded")
                 raise HTTPException(
                     status_code=429,
@@ -155,7 +181,7 @@ class GeminiService:
             return response_text, token_usage
 
         except Exception as e:
-            if isinstance(e, google_exceptions.ResourceExhausted):
+            if _is_quota_error(e):
                 logger.warning("Gemini quota exceeded")
                 raise HTTPException(
                     status_code=429,

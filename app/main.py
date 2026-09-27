@@ -2,12 +2,15 @@
 
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.datastructures import Headers
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.core.auth import require_admin_api_key
 from app.core.config import get_settings
@@ -84,38 +87,99 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         return response
 
 
-class BodySizeLimitMiddleware(BaseHTTPMiddleware):
-    """Reject requests with bodies larger than configured limit."""
+class BodySizeLimitMiddleware:
+    """Reject requests with bodies larger than configured limit.
 
-    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
-        content_length = request.headers.get("content-length")
-        if content_length and int(content_length) > settings.max_request_body_bytes:
-            return JSONResponse(
-                status_code=413,
-                content={"detail": "Request body is too large.", "error_type": "request_too_large"},
-            )
-        return await call_next(request)
+    A declared Content-Length is checked up front. A body without a usable one
+    (chunked transfer) is read here, never past the limit, and then replayed to
+    the app, so an oversized body is rejected before anything buffers or parses it.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    @staticmethod
+    def _too_large() -> JSONResponse:
+        return JSONResponse(
+            status_code=413,
+            content={"detail": "Request body is too large.", "error_type": "request_too_large"},
+        )
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        limit = settings.max_request_body_bytes
+        try:
+            declared = int(Headers(scope=scope)["content-length"])
+        except (KeyError, ValueError):
+            declared = None
+
+        if declared is not None:
+            if declared > limit:
+                await self._too_large()(scope, receive, send)
+                return
+            await self.app(scope, receive, send)
+            return
+
+        body = bytearray()
+        more_body = True
+        while more_body:
+            message = await receive()
+            if message["type"] != "http.request":
+                return  # client disconnected mid-body
+            body.extend(message.get("body", b""))
+            if len(body) > limit:
+                await self._too_large()(scope, receive, send)
+                return
+            more_body = message.get("more_body", False)
+
+        replayed = False
+
+        async def replay_receive() -> Message:
+            nonlocal replayed
+            if not replayed:
+                replayed = True
+                return {"type": "http.request", "body": bytes(body), "more_body": False}
+            return await receive()
+
+        await self.app(scope, replay_receive, send)
 
 
-app.add_middleware(SecurityHeadersMiddleware)
+STATIC_DIR = Path("static")
+
+
+def static_asset_paths(directory: Path) -> frozenset[str]:
+    """URL paths the StaticFiles mount at "/" serves, including "/" for index.html."""
+    files = {"/" + path.relative_to(directory).as_posix() for path in directory.rglob("*") if path.is_file()}
+    return frozenset(files | {"/"})
+
+
+# Middleware added later wraps middleware added earlier, so execution order is
+# the reverse of this list: RequestID -> CORS -> SecurityHeaders -> RateLimit ->
+# BodySizeLimit -> app. CORS and the security headers sit outside the rate
+# limiter and the body limit so their 429 and 413 responses carry both, and
+# CORS answers preflights before they cost a rate-limit slot.
 app.add_middleware(BodySizeLimitMiddleware)
 
-# Add CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.allowed_origins,
-    allow_credentials=False,
-    allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["Content-Type", "X-API-Key", "X-Admin-API-Key"],
-)
-
-# Add rate limiting middleware
 rate_limit_store = create_rate_limit_store(settings.redis_url)
 app.add_middleware(
     RateLimitMiddleware,
     store=rate_limit_store,
     max_requests=settings.rate_limit_requests,
     window_seconds=settings.rate_limit_window_seconds,
+    excluded_paths=static_asset_paths(STATIC_DIR),
+)
+
+app.add_middleware(SecurityHeadersMiddleware)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.allowed_origins,
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type", "X-API-Key", "X-Admin-API-Key"],
 )
 
 # RequestIDMiddleware must be added LAST so it is executed FIRST (outermost layer).
@@ -141,4 +205,4 @@ app.include_router(chat.router)
 app.include_router(analytics.router)
 
 # Mount static files (must be last)
-app.mount("/", StaticFiles(directory="static", html=True), name="static")
+app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")

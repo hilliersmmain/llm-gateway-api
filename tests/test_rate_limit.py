@@ -8,6 +8,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+import app.middleware.rate_limit as rate_limit_module
 from app.middleware.rate_limit import (
     InMemoryRateLimitStore,
     RateLimitMiddleware,
@@ -91,6 +92,37 @@ class TestInMemoryRateLimitStore:
         retry_after = asyncio.run(store.get_retry_after("unknown_ip", window_seconds=60))
         assert retry_after == 0
 
+
+
+class TestInMemoryStoreSweep:
+    """Clients that stop sending requests must not stay in memory forever."""
+
+    def test_idle_clients_are_swept_after_a_window(self, monkeypatch):
+        now = [1000.0]
+        monkeypatch.setattr(rate_limit_module.time, "time", lambda: now[0])
+        store = InMemoryRateLimitStore()
+
+        for i in range(50):
+            asyncio.run(store.is_allowed(f"10.0.0.{i}", max_requests=5, window_seconds=60))
+        assert len(store._requests) == 50
+
+        now[0] += 61
+        asyncio.run(store.is_allowed("10.0.1.1", max_requests=5, window_seconds=60))
+
+        assert list(store._requests) == ["10.0.1.1"]
+
+    def test_active_clients_survive_the_sweep(self, monkeypatch):
+        now = [1000.0]
+        monkeypatch.setattr(rate_limit_module.time, "time", lambda: now[0])
+        store = InMemoryRateLimitStore()
+
+        asyncio.run(store.is_allowed("idle", max_requests=5, window_seconds=60))
+        now[0] += 30
+        asyncio.run(store.is_allowed("active", max_requests=5, window_seconds=60))
+        now[0] += 31
+        asyncio.run(store.is_allowed("new", max_requests=5, window_seconds=60))
+
+        assert sorted(store._requests) == ["active", "new"]
 
 class TestCreateRateLimitStore:
     """Tests for rate limit store factory."""
@@ -209,6 +241,28 @@ class TestRateLimitMiddleware:
         response = client.get("/metrics")
         assert response.status_code == 429
 
+
+    def test_excluded_paths_bypass_rate_limit(self):
+        app = FastAPI()
+        app.add_middleware(
+            RateLimitMiddleware,
+            store=InMemoryRateLimitStore(),
+            max_requests=1,
+            window_seconds=60,
+            excluded_paths={"/style.css"},
+        )
+
+        @app.get("/style.css")
+        async def asset():
+            return {}
+
+        @app.get("/test")
+        async def endpoint():
+            return {}
+
+        client = TestClient(app)
+        assert [client.get("/style.css").status_code for _ in range(3)] == [200, 200, 200]
+        assert [client.get("/test").status_code for _ in range(2)] == [200, 429]
 
 class TestRateLimitMiddlewareIPExtraction:
     """Tests for IP extraction in rate limit middleware."""

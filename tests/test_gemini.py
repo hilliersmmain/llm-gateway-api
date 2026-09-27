@@ -1,10 +1,11 @@
 """Tests for Gemini service — generate_response and generate_response_stream."""
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import HTTPException
-from google.api_core import exceptions as google_exceptions
+from google.genai import errors as genai_errors
 
 import app.services.gemini as gemini_module
 from app.services.gemini import GeminiService
@@ -50,6 +51,28 @@ class FakeAsyncIterator:
         chunk = self._chunks[self._index]
         self._index += 1
         return chunk
+
+
+class StallingAsyncIterator(FakeAsyncIterator):
+    """Yields its chunks, then never produces another one."""
+
+    async def __anext__(self):
+        if self._index >= len(self._chunks):
+            await asyncio.Event().wait()
+        return await super().__anext__()
+
+
+def quota_error() -> genai_errors.ClientError:
+    """The error google-genai raises when the Gemini quota is exhausted."""
+    return genai_errors.ClientError(
+        429, {"error": {"code": 429, "message": "Quota exceeded", "status": "RESOURCE_EXHAUSTED"}}
+    )
+
+
+def server_error() -> genai_errors.ServerError:
+    return genai_errors.ServerError(
+        503, {"error": {"code": 503, "message": "Unavailable", "status": "UNAVAILABLE"}}
+    )
 
 
 @pytest.fixture
@@ -104,7 +127,7 @@ class TestGenerateResponse:
     async def test_resource_exhausted_raises_429(self, gemini_service):
         """Should raise HTTPException 429 when Gemini quota is exceeded."""
         gemini_service.client.aio.models.generate_content = AsyncMock(
-            side_effect=google_exceptions.ResourceExhausted("Quota exceeded")
+            side_effect=quota_error()
         )
 
         with pytest.raises(HTTPException) as exc_info:
@@ -177,9 +200,9 @@ class TestGenerateResponseStream:
         assert results[1][1] is not None
 
     async def test_resource_exhausted_raises_429(self, gemini_service):
-        """Should raise HTTPException 429 on ResourceExhausted during streaming."""
+        """Should raise HTTPException 429 when the quota is exhausted during streaming."""
         gemini_service.client.aio.models.generate_content_stream = AsyncMock(
-            side_effect=google_exceptions.ResourceExhausted("Quota exceeded")
+            side_effect=quota_error()
         )
 
         with pytest.raises(HTTPException) as exc_info:
@@ -235,25 +258,20 @@ class TestCallWithRetryBackoff:
                 raise RuntimeError("transient error")
             return "ok"
 
-        with patch.object(
-            gemini_module.asyncio,
-            "wait_for",
-            side_effect=lambda coro, timeout: coro,
-        ):
-            # Patch wait_for to just await the coroutine directly
-            async def direct_wait_for(coro, timeout):
-                return await coro
+        # Patch wait_for to just await the coroutine directly. (It used to sit
+        # inside a patch.object on the same attribute, which made monkeypatch
+        # restore the MagicMock at teardown and broke asyncio.wait_for for every
+        # later test.)
+        async def direct_wait_for(coro, timeout):
+            return await coro
 
-            monkeypatch.setattr(gemini_module.asyncio, "wait_for", direct_wait_for)
+        monkeypatch.setattr(gemini_module.asyncio, "wait_for", direct_wait_for)
 
-            with (
-                patch.object(service, "_call_with_retry", wraps=service._call_with_retry),
-                patch("app.services.gemini.settings") as mock_settings,
-            ):
-                # Use 3 retry attempts so both sleeps occur
-                mock_settings.gemini_retry_attempts = 3
-                mock_settings.gemini_timeout_seconds = 30
-                result = await service._call_with_retry(flaky_call)
+        with patch("app.services.gemini.settings") as mock_settings:
+            # Use 3 retry attempts so both sleeps occur
+            mock_settings.gemini_retry_attempts = 3
+            mock_settings.gemini_timeout_seconds = 30
+            result = await service._call_with_retry(flaky_call)
 
         assert result == "ok"
         assert len(sleep_calls) == 2
@@ -337,3 +355,120 @@ class TestCallWithRetryBackoff:
 
         # Budget guard should fire after first failure — only 1 call made
         assert call_count == 1
+
+
+class TestRetryPolicy:
+    """Which google-genai errors are retried, and how they map to HTTP errors."""
+
+    @pytest.fixture(autouse=True)
+    def no_backoff(self, monkeypatch):
+        async def fake_sleep(delay: float) -> None:
+            pass
+
+        monkeypatch.setattr(gemini_module.asyncio, "sleep", fake_sleep)
+
+    async def test_quota_error_is_not_retried(self, gemini_service):
+        """A 429 from google-genai maps to HTTP 429 after a single attempt."""
+        gemini_service.client.aio.models.generate_content = AsyncMock(side_effect=quota_error())
+
+        with (
+            patch.object(gemini_module.settings, "gemini_retry_attempts", 3),
+            pytest.raises(HTTPException) as exc_info,
+        ):
+            await gemini_service.generate_response("Hello")
+
+        assert exc_info.value.status_code == 429
+        assert gemini_service.client.aio.models.generate_content.call_count == 1
+
+    async def test_other_client_error_is_not_retried(self, gemini_service):
+        """A 4xx other than 429 maps to 502 without retrying."""
+        bad_request = genai_errors.ClientError(
+            400, {"error": {"code": 400, "message": "bad", "status": "INVALID_ARGUMENT"}}
+        )
+        gemini_service.client.aio.models.generate_content = AsyncMock(side_effect=bad_request)
+
+        with (
+            patch.object(gemini_module.settings, "gemini_retry_attempts", 3),
+            pytest.raises(HTTPException) as exc_info,
+        ):
+            await gemini_service.generate_response("Hello")
+
+        assert exc_info.value.status_code == 502
+        assert gemini_service.client.aio.models.generate_content.call_count == 1
+
+    async def test_server_error_is_retried(self, gemini_service):
+        """A 5xx is transient: the call is retried and can then succeed."""
+        gemini_service.client.aio.models.generate_content = AsyncMock(
+            side_effect=[server_error(), FakeResponse(text="recovered")]
+        )
+
+        with patch.object(gemini_module.settings, "gemini_retry_attempts", 3):
+            text, _ = await gemini_service.generate_response("Hello")
+
+        assert text == "recovered"
+        assert gemini_service.client.aio.models.generate_content.call_count == 2
+
+
+class TestStreamTimeoutAndRetry:
+    """The stream's first chunk is retried under the timeout; later chunks are timed out."""
+
+    @pytest.fixture(autouse=True)
+    def fast_settings(self, monkeypatch):
+        async def fake_sleep(delay: float) -> None:
+            pass
+
+        monkeypatch.setattr(gemini_module.asyncio, "sleep", fake_sleep)
+        monkeypatch.setattr(gemini_module.settings, "gemini_timeout_seconds", 0.05)
+        monkeypatch.setattr(gemini_module.settings, "gemini_retry_attempts", 2)
+
+    async def test_stalled_first_chunk_is_retried_then_502(self, gemini_service):
+        """A stream that never produces its first chunk is retried, then fails with 502."""
+        gemini_service.client.aio.models.generate_content_stream = AsyncMock(
+            side_effect=lambda **_: StallingAsyncIterator([])
+        )
+
+        async def consume():
+            async for _ in gemini_service.generate_response_stream("Hi"):
+                pass
+
+        # The outer cap turns a regression into a failure instead of a hung suite.
+        with pytest.raises(HTTPException) as exc_info:
+            await asyncio.wait_for(consume(), timeout=5)
+
+        assert exc_info.value.status_code == 502
+        assert gemini_service.client.aio.models.generate_content_stream.call_count == 2
+
+    async def test_failed_first_chunk_is_retried(self, gemini_service):
+        """A transient failure opening the stream is retried and the retry streams normally."""
+
+        class FailingIterator(FakeAsyncIterator):
+            async def __anext__(self):
+                raise server_error()
+
+        gemini_service.client.aio.models.generate_content_stream = AsyncMock(
+            side_effect=[FailingIterator([]), FakeAsyncIterator([FakeChunk(text="ok")])]
+        )
+
+        results = [item async for item in gemini_service.generate_response_stream("Hi")]
+
+        assert results[0] == ("ok", None)
+        assert gemini_service.client.aio.models.generate_content_stream.call_count == 2
+
+    async def test_stall_after_first_chunk_times_out_without_retry(self, gemini_service):
+        """A stream that stalls mid-way fails with 502 and is not re-requested."""
+        gemini_service.client.aio.models.generate_content_stream = AsyncMock(
+            return_value=StallingAsyncIterator([FakeChunk(text="partial")])
+        )
+
+        received = []
+
+        async def consume():
+            async for text, _ in gemini_service.generate_response_stream("Hi"):
+                received.append(text)
+
+        with pytest.raises(HTTPException) as exc_info:
+            await asyncio.wait_for(consume(), timeout=5)
+
+        assert received == ["partial"]
+        assert exc_info.value.status_code == 502
+        assert gemini_service.client.aio.models.generate_content_stream.call_count == 1

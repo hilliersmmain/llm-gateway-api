@@ -2,6 +2,7 @@
 
 import logging
 import time
+from collections.abc import Iterable
 from typing import Protocol
 
 from fastapi import Request, Response
@@ -28,6 +29,23 @@ class InMemoryRateLimitStore:
 
     def __init__(self) -> None:
         self._requests: dict[str, list[float]] = {}
+        self._last_sweep = time.time()
+
+    def _sweep_idle_keys(self, window_seconds: int) -> None:
+        """Drop every key whose requests have all left the window.
+
+        _cleanup_old_requests only prunes the key being checked, so without this
+        a client that never returns would keep its entry for the life of the
+        process. Runs at most once per window.
+        """
+        now = time.time()
+        if now - self._last_sweep < window_seconds:
+            return
+        self._last_sweep = now
+        cutoff = now - window_seconds
+        idle = [key for key, stamps in self._requests.items() if not stamps or stamps[-1] <= cutoff]
+        for key in idle:
+            del self._requests[key]
 
     def _cleanup_old_requests(self, key: str, window_seconds: int) -> None:
         """Remove requests outside the current window."""
@@ -43,6 +61,7 @@ class InMemoryRateLimitStore:
 
     async def is_allowed(self, key: str, max_requests: int, window_seconds: int) -> bool:
         """Check if request is allowed using sliding window."""
+        self._sweep_idle_keys(window_seconds)
         self._cleanup_old_requests(key, window_seconds)
         
         current_requests = self._requests.get(key, [])
@@ -122,7 +141,7 @@ return 1
         return max(1, retry_after)
 
 
-def create_rate_limit_store(redis_url: str | None = None) -> InMemoryRateLimitStore | RedisRateLimitStore:
+def create_rate_limit_store(redis_url: str | None = None) -> RateLimitStore:
     """Factory function to create appropriate rate limit store."""
     if redis_url:
         logger.info("Using Redis for rate limiting")
@@ -141,12 +160,14 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     def __init__(
         self,
         app,
-        store: InMemoryRateLimitStore | RedisRateLimitStore,
+        store: RateLimitStore,
         max_requests: int = 10,
         window_seconds: int = 60,
+        excluded_paths: Iterable[str] = (),
     ) -> None:
         super().__init__(app)
         self.store = store
+        self.excluded_paths = self.EXCLUDED_PATHS | frozenset(excluded_paths)
         self.max_requests = max_requests
         self.window_seconds = window_seconds
 
@@ -161,12 +182,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self, request: Request, call_next: RequestResponseEndpoint
     ) -> Response:
         """Process request through rate limiting."""
-        # Skip rate limiting for excluded paths
-        if request.url.path in self.EXCLUDED_PATHS:
-            return await call_next(request)
-        
-        # Also skip static files
-        if request.url.path.startswith("/static"):
+        # Skip rate limiting for excluded paths (health, and the static assets
+        # main.py passes in: StaticFiles is mounted at "/", not "/static")
+        if request.url.path in self.excluded_paths:
             return await call_next(request)
         
         client_ip = self._get_client_ip(request)

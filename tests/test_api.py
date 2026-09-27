@@ -1,9 +1,11 @@
 """Integration tests for API endpoints."""
 
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
-from fastapi import BackgroundTasks, HTTPException
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
+
+from app import main
 
 
 class TestHealthEndpoint:
@@ -102,6 +104,28 @@ class TestChatEndpoint:
             response_ok = client.post("/chat", json={"message": "Hello"}, headers={"X-API-Key": "test-key"})
             assert response_ok.status_code == 200
 
+
+    def test_api_key_is_compared_in_constant_time(self, client: TestClient):
+        """Key checks must go through secrets.compare_digest, not ==."""
+        import secrets
+
+        with (
+            patch("app.core.auth.settings.protected_paths", True),
+            patch("app.core.auth.settings.api_key", "test-key"),
+            patch("app.core.auth.secrets.compare_digest", wraps=secrets.compare_digest) as compare,
+        ):
+            assert client.post("/chat", json={"message": "Hello"}, headers={"X-API-Key": "wrong"}).status_code == 401
+            assert client.post("/chat", json={"message": "Hello"}, headers={"X-API-Key": "test-key"}).status_code == 200
+
+        assert compare.call_count == 2
+
+    def test_non_ascii_api_key_is_rejected_not_a_server_error(self, client: TestClient):
+        with patch("app.core.auth.settings.protected_paths", True), patch("app.core.auth.settings.api_key", "test-key"):
+            response = client.post(
+                "/chat", json={"message": "Hello"}, headers={"X-API-Key": "clé".encode()}
+            )
+
+        assert response.status_code == 401
 
 class TestChatStreamEndpoint:
     """Tests for /chat/stream endpoint."""
@@ -232,16 +256,97 @@ class TestChatErrorLatency:
 
         mock_gemini.generate_response = failing_generate_response
 
-        with patch.object(BackgroundTasks, "add_task", autospec=True) as add_task_mock:
+        with patch("app.routers.chat.save_request_log", new_callable=AsyncMock) as save_mock:
             response = client.post("/chat", json={"message": "hello"})
 
         assert response.status_code == 502
-        assert add_task_mock.called
+        save_mock.assert_awaited_once()
+        assert save_mock.await_args.kwargs["status"] == "error"
+        assert save_mock.await_args.kwargs["latency_ms"] >= 0
 
-        latency_values = [
-            kwargs["latency_ms"]
-            for _, kwargs in add_task_mock.call_args_list
-            if "latency_ms" in kwargs
-        ]
-        assert latency_values, "Expected latency value in add_task call."
-        assert latency_values[0] >= 0
+    def test_chat_error_is_written_to_the_request_log(self, client: TestClient, mock_gemini, mock_db_session):
+        """An upstream failure must reach the database, not a dropped background task."""
+        async def failing_generate_response(_message: str):
+            raise HTTPException(status_code=502, detail="upstream failed")
+
+        mock_gemini.generate_response = failing_generate_response
+
+        response = client.post("/chat", json={"message": "hello"})
+
+        assert response.status_code == 502
+        logged = [call.args[0] for call in mock_db_session.add.call_args_list]
+        assert [(type(row).__name__, row.status) for row in logged] == [("RequestLog", "error")]
+        mock_db_session.commit.assert_awaited()
+
+
+class TestMiddlewareStack:
+    """Body limit, rate limit, CORS and security headers working together."""
+
+    ORIGIN = "http://localhost:8000"  # first entry of the default ALLOWED_ORIGINS
+
+    def test_chunked_body_over_limit_returns_413(self, client: TestClient):
+        """A body with no Content-Length must still be held to the limit."""
+        def body():
+            yield b'{"message": "'
+            yield b"x" * 500
+            yield b'"}'
+
+        with patch("app.main.settings.max_request_body_bytes", 30):
+            response = client.post("/chat", content=body(), headers={"Content-Type": "application/json"})
+
+        assert response.status_code == 413
+        assert response.json()["error_type"] == "request_too_large"
+
+    def test_chunked_body_under_limit_reaches_the_endpoint(self, client: TestClient):
+        def body():
+            yield b'{"message": '
+            yield b'"Hello"}'
+
+        response = client.post("/chat", content=body(), headers={"Content-Type": "application/json"})
+
+        assert response.status_code == 200
+        assert response.json()["content"] == "This is a mock response."
+
+    def test_body_limit_response_carries_security_headers(self, client: TestClient):
+        with patch("app.main.settings.max_request_body_bytes", 30):
+            response = client.post("/chat", json={"message": "x" * 500})
+
+        assert response.status_code == 413
+        assert response.headers["content-security-policy"] == main.CSP_POLICY
+        assert response.headers["x-content-type-options"] == "nosniff"
+
+    def test_rate_limited_response_carries_cors_and_security_headers(self, client: TestClient):
+        with (
+            patch.object(main.rate_limit_store, "is_allowed", AsyncMock(return_value=False)),
+            patch.object(main.rate_limit_store, "get_retry_after", AsyncMock(return_value=5)),
+        ):
+            response = client.get("/metrics", headers={"Origin": self.ORIGIN})
+
+        assert response.status_code == 429
+        assert response.headers["retry-after"] == "5"
+        assert response.headers["access-control-allow-origin"] == self.ORIGIN
+        assert response.headers["content-security-policy"] == main.CSP_POLICY
+
+    def test_cors_preflight_does_not_consume_rate_limit(self, client: TestClient):
+        with patch.object(main.rate_limit_store, "is_allowed", AsyncMock(return_value=False)) as is_allowed:
+            response = client.options(
+                "/chat",
+                headers={"Origin": self.ORIGIN, "Access-Control-Request-Method": "POST"},
+            )
+
+        assert response.status_code == 200
+        assert response.headers["access-control-allow-origin"] == self.ORIGIN
+        is_allowed.assert_not_called()
+
+    def test_static_assets_do_not_consume_rate_limit(self, client: TestClient):
+        with patch.object(main.rate_limit_store, "is_allowed", AsyncMock(return_value=False)) as is_allowed:
+            for path in ("/", "/style.css", "/script.js", "/favicon.svg"):
+                assert client.get(path).status_code == 200, path
+
+        is_allowed.assert_not_called()
+
+    def test_api_routes_still_consume_rate_limit(self, client: TestClient):
+        with patch.object(main.rate_limit_store, "is_allowed", AsyncMock(return_value=True)) as is_allowed:
+            assert client.post("/chat", json={"message": "Hello"}).status_code == 200
+
+        is_allowed.assert_awaited_once()

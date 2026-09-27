@@ -22,7 +22,7 @@ def redact_text(text: str, max_length: int) -> str:
     If raw content logging is disabled, return a deterministic hash marker.
     """
     truncated = text[:max_length]
-    if settings.log_raw_content:
+    if settings.log_raw_content or not truncated:
         return truncated
     hashed = hash_value(truncated)
     return f"[redacted_sha256:{hashed}]"
